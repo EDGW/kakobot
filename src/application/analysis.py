@@ -159,6 +159,7 @@ class AutomaticAnalysis:
                 existing=existing,
                 preference=preference,
                 direct_text=direct_text,
+                actor_profile=await names.profile(ctx.actor),
             )
             if not self.enabled(ctx):
                 raise BusinessError("自动分析资格已变更，未注册任务。")

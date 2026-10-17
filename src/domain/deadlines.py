@@ -22,6 +22,12 @@ class DeadlinePlan:
     reminders: tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class DeadlineConfirmation:
+    text: str
+    created: bool
+
+
 def title_key(title):
     return " ".join(unicodedata.normalize("NFKC", title).casefold().split())
 

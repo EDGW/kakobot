@@ -8,14 +8,19 @@ from datetime import datetime
 
 from ..domain.analysis import DEFAULT_TIME_PROMPT, MAX_DEFAULT_PROMPT
 from ..domain.context import qq_id
-from ..domain.deadlines import BEIJING, parse_strict, split_targets
+from ..domain.deadlines import (
+    BEIJING,
+    DeadlineConfirmation,
+    parse_strict,
+    split_targets,
+)
 from ..domain.errors import BusinessError
 from ..domain.security import SecretViolation
 from ..domain.text import display_name
 from ..infrastructure.messages import command_body, visible_text
 from ..infrastructure.onebot import ReadonlyViolation
 from ..presentation.deadline_image import MAX_CARDS, active_tasks, render_deadlines
-from ..presentation.deadlines import show_task
+from ..presentation.deadlines import participant_labels, show_task
 
 
 class DeadlineService:
@@ -80,20 +85,7 @@ class DeadlineService:
         if sub == "view":
             if value.strip():
                 raise BusinessError("用法：/ddl view")
-            async with self.image_slots:
-                async with self.data.lock:
-                    now = time.time()
-                    tasks = active_tasks(self.data.list(ctx.scope, now), now)
-                # Inspect full source titles before rasterization can hide them
-                # from the text filter (including any ellipsized suffix).
-                self.guard.secrets.check([task["title"] for task in tasks[:MAX_CARDS]])
-                png = await asyncio.to_thread(render_deadlines, tasks, now)
-            await self.authorizer.authorize(action.spec, ctx, action.arguments, gateway)
-            self.check_writable(ctx)
-            self.guard.secrets.check([task["title"] for task in tasks[:MAX_CARDS]])
-            await gateway.send_image(
-                png, group=ctx.group, user="" if ctx.group else ctx.actor
-            )
+            await self.send_view(ctx, gateway, names)
             return None
         if sub == "list":
             page = int(qq_id(value)) if value else 1
@@ -121,6 +113,39 @@ class DeadlineService:
             if sub == "remove":
                 return self.data.remove(ctx.scope, identifier, ctx.actor)
         return await show_task(task, names, time.time())
+
+    async def send_view(self, ctx, gateway, names):
+        self.check_writable(ctx)
+        if ctx.group:
+            members = await self.authorizer.require_member(
+                ctx.actor, ctx.group, gateway
+            )
+            names.seed_members(ctx.group, members)
+        async with self.image_slots:
+            async with self.data.lock:
+                now = time.time()
+                tasks = active_tasks(self.data.list(ctx.scope, now), now)
+            for task in tasks[:MAX_CARDS]:
+                if ctx.group:
+                    task["participant_label"] = await participant_labels(
+                        task, names, ctx.group
+                    )
+            # Inspect complete strings before rasterization or truncation.
+            labels = [
+                [task["title"], task.get("participant_label", "")]
+                for task in tasks[:MAX_CARDS]
+            ]
+            self.guard.secrets.check(labels)
+            png = await asyncio.to_thread(
+                render_deadlines, tasks, now, group=bool(ctx.group)
+            )
+        if ctx.group:
+            await self.authorizer.require_member(ctx.actor, ctx.group, gateway)
+        self.check_writable(ctx)
+        self.guard.secrets.check(labels)
+        await gateway.send_image(
+            png, group=ctx.group, user="" if ctx.group else ctx.actor
+        )
 
     def defaulttime(self, ctx, value):
         if ctx.group:
@@ -235,6 +260,7 @@ class DeadlineService:
                 nodes = [
                     {
                         "node_id": "n1",
+                        "author_id": ctx.actor,
                         "text": annotated,
                         "sent_at": ctx.received_at,
                         "local_time": datetime.fromtimestamp(
@@ -263,6 +289,12 @@ class DeadlineService:
                     preflight=preflight,
                     on_submitted=on_submitted,
                     location=ctx.location,
+                    actor_profile=await names.profile(ctx.actor, ctx.group),
+                    member_profiles=[
+                        await names.profile(user, ctx.group) for user in allowed
+                    ]
+                    if ctx.group
+                    else (),
                 )
                 plans, rejected = extracted.plans, extracted.rejected
             method = "manual"
@@ -390,7 +422,10 @@ class DeadlineService:
             + await show_task(task, names, time.time())
             for task, created in tasks
         ]
-        return "\n\n".join(lines + rejected) or "未发现可添加的未过期 DDL。"
+        return DeadlineConfirmation(
+            "\n\n".join(lines + rejected) or "未发现可添加的未过期 DDL。",
+            any(created for _, created in identifiers),
+        )
 
     async def clear(self, action, gateway, names):
         ctx = action.context

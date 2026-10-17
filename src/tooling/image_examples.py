@@ -57,9 +57,50 @@ def main():
         ],
         "04-empty.png": [],
     }
+
+    def group_task(title, participants, **offset):
+        return {**task(title, **offset), "participant_label": participants}
+
+    group_examples = {
+        "05-group-dinner.png": [
+            group_task("叫AAA请BBB吃饭", "AAA(33221122)、BBB(11223344)", hours=9),
+            group_task(
+                "BBB提交复变函数课第三次作业（第5章）",
+                "BBB(11223344)",
+                days=2,
+                hours=8,
+            ),
+        ],
+        "06-group-courses.png": [
+            group_task("AAA提交物理作业（第10章）", "AAA(33221122)", hours=2),
+            group_task(
+                "AAA与BBB提交机器学习课程项目",
+                "AAA(33221122)、BBB(11223344)",
+                hours=10,
+            ),
+            group_task("CCC提交未知课程作业", "CCC(55667788)", days=5),
+        ],
+        "07-group-more-than-ten.png": [
+            {**item, "participant_label": "AAA(33221122)、BBB(11223344)"}
+            for item in examples["02-more-than-ten.png"]
+        ],
+        "08-group-many-participants.png": [
+            group_task(
+                "课程项目小组完成联合答辩",
+                "、".join(
+                    f"小组成员{index}(556677{index:02d})" for index in range(1, 9)
+                ),
+                days=2,
+            ),
+        ],
+    }
     for name, tasks in examples.items():
         path = output / name
         path.write_bytes(render_deadlines(tasks, now.timestamp()))
+        print(path)
+    for name, tasks in group_examples.items():
+        path = output / name
+        path.write_bytes(render_deadlines(tasks, now.timestamp(), group=True))
         print(path)
 
 

@@ -9,7 +9,7 @@ def _name(value) -> str:
 
 
 class NameDirectory:
-    """Reuse a group/member snapshot within one command, never in model input."""
+    """Reuse verified QQ identities and bounded name labels within one command."""
 
     def __init__(self, gateway, guard):
         self.gateway = gateway
@@ -46,9 +46,14 @@ class NameDirectory:
         name = self.groups[group]
         return f"{name}（{group}）" if name else group
 
-    async def user(self, user: str, group: str = "") -> str:
+    async def profile(self, user: str, group: str = "") -> dict:
         if user == "000000000":
-            return user
+            return {
+                "qq_id": user,
+                "display_name": user,
+                "nickname": "",
+                "group_card": "",
+            }
         user = qq_id(user)
         member = {}
         if group:
@@ -67,8 +72,23 @@ class NameDirectory:
                 info = await self._info("get_stranger_info", user_id=int(user))
                 self.users[user] = _name(info.get("nickname"))
             nickname = self.users[user]
-        names = list(dict.fromkeys(name for name in (card, nickname) if name))
-        return f"{' / '.join(names)}（{user}）" if names else user
+        return {
+            "qq_id": user,
+            "display_name": card or nickname or user,
+            "nickname": nickname,
+            "group_card": card,
+        }
+
+    async def user(self, user: str, group: str = "") -> str:
+        profile = await self.profile(user, group)
+        names = list(
+            dict.fromkeys(
+                name for name in (profile["group_card"], profile["nickname"]) if name
+            )
+        )
+        return (
+            f"{' / '.join(names)}（{profile['qq_id']}）" if names else profile["qq_id"]
+        )
 
     async def user_list(self, users, group: str = "", separator=", ") -> str:
         return (

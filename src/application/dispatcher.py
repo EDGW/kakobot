@@ -4,6 +4,7 @@ import logging
 from contextlib import nullcontext
 
 from ..domain.commands import CATALOG, resolve
+from ..domain.deadlines import DeadlineConfirmation
 from ..domain.errors import BusinessError, ModelError
 from ..domain.security import SecretViolation
 from ..infrastructure.onebot import ReadonlyViolation, deadline_context
@@ -78,9 +79,15 @@ class Dispatcher:
                     action = await self.authorizer.authorize(spec, ctx, args, gateway)
                     reply = await self.execute(action, gateway, names, on_submitted)
                 if reply:
+                    show_view = False
                     for message in reply if isinstance(reply, list) else [reply]:
+                        if isinstance(message, DeadlineConfirmation):
+                            show_view |= message.created
+                            message = message.text
                         if message:
                             await self.reply(ctx, gateway, message)
+                    if show_view:
+                        await self.created_view(ctx, gateway, names)
             except ReadonlyViolation:
                 return
             except SecretViolation as exc:
@@ -182,6 +189,19 @@ class Dispatcher:
         await gateway.send(
             text=text, group=ctx.group, user="" if ctx.group else ctx.actor
         )
+
+    async def created_view(self, ctx, gateway, names):
+        try:
+            await self.deadlines.send_view(ctx, gateway, names)
+        except ReadonlyViolation:
+            return
+        except Exception as exc:
+            await self.guard.report_error(
+                gateway.bot, ctx.bot, "DDL 已添加；自动发送 view 图片", exc
+            )
+            await self.safe_reply(
+                ctx, gateway, "DDL 已添加，但预览图片未能发送，可稍后使用 /ddl view。"
+            )
 
     async def safe_reply(self, ctx, gateway, text):
         try:

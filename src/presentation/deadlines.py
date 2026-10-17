@@ -1,5 +1,7 @@
 """Human-readable task details shared by commands, import and scheduling."""
 
+import json
+
 from ..domain.deadlines import local_time
 
 STATES = {
@@ -17,6 +19,22 @@ METHODS = {
     "manual": "手动 AI",
     "auto": "自动分析",
 }
+
+
+async def participant_labels(task, names, group):
+    source = json.loads(task["source"])
+    # Older tasks and strict commands have no semantic participant extraction;
+    # notification targets alone do not establish who participates in an event.
+    participants = source.get("participant_ids", [])
+    profiles = [
+        await names.profile(user, group) for user in dict.fromkeys(participants)
+    ]
+    return (
+        "、".join(
+            f"{profile['display_name']}({profile['qq_id']})" for profile in profiles
+        )
+        or "未明确"
+    )
 
 
 async def show_task(task, names, now):
