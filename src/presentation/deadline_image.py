@@ -42,7 +42,10 @@ def active_tasks(tasks, now):
 def urgency(deadline, now):
     if deadline - now <= 3 * 3600:
         return "urgent"
-    if datetime.fromtimestamp(deadline, BEIJING).date() == datetime.fromtimestamp(now, BEIJING).date():
+    if (
+        datetime.fromtimestamp(deadline, BEIJING).date()
+        == datetime.fromtimestamp(now, BEIJING).date()
+    ):
         return "today"
     return "soon" if deadline - now <= 3 * 86400 else "later"
 
@@ -55,7 +58,9 @@ def remaining(deadline, now):
     days, minutes = divmod(minutes, 1440)
     hours, minutes = divmod(minutes, 60)
     return "".join(
-        f"{value}{unit}" for value, unit in ((days, "天"), (hours, "小时"), (minutes, "分钟")) if value
+        f"{value}{unit}"
+        for value, unit in ((days, "天"), (hours, "小时"), (minutes, "分钟"))
+        if value
     )
 
 
@@ -88,14 +93,20 @@ def render_deadlines(tasks, now):
     canvas = Image.new("RGB", (WIDTH, height), BACKGROUND)
     draw = ImageDraw.Draw(canvas)
     title_fonts = [_font(size, bold=True) for size in (48, 44, 40, 36)]
-    detail_font, footer_font = _font(30), _font(28)
+    detail_fonts, footer_font = [_font(size) for size in (30, 28, 26, 24)], _font(28)
     if not visible:
         draw.rounded_rectangle(
             (MARGIN, MARGIN, WIDTH - MARGIN, height - MARGIN),
             radius=24,
             fill="#48566D",
         )
-        draw.text((WIDTH / 2, height / 2), "暂无有效 DDL", font=title_fonts[0], fill=WHITE, anchor="mm")
+        draw.text(
+            (WIDTH / 2, height / 2),
+            "暂无有效 DDL",
+            font=title_fonts[0],
+            fill=WHITE,
+            anchor="mm",
+        )
     for index, task in enumerate(visible):
         top = MARGIN + index * (CARD_HEIGHT + GAP)
         draw.rounded_rectangle(
@@ -106,18 +117,40 @@ def render_deadlines(tasks, now):
         left, right = MARGIN + 36, WIDTH - MARGIN - 36
         title, font = _title(task["title"], right - left, title_fonts)
         draw.text((left, top + 54), title, font=font, fill=WHITE, anchor="lm")
-        deadline = datetime.fromtimestamp(task["deadline"], BEIJING).strftime("%Y-%m-%d %H:%M")
+        deadline = datetime.fromtimestamp(task["deadline"], BEIJING).strftime(
+            "%Y-%m-%d %H:%M"
+        )
         due = f"DDL  {deadline}"
         rest = "剩余 " + remaining(task["deadline"], now)
+        detail_font = next(
+            (
+                font
+                for font in detail_fonts
+                if font.getlength(due + rest) + 32 <= right - left
+            ),
+            detail_fonts[-1],
+        )
         draw.text((left, top + 125), due, font=detail_font, fill=WHITE, anchor="lm")
         draw.text((right, top + 125), rest, font=detail_font, fill=WHITE, anchor="rm")
     if overflow:
+        label = f"还有 {overflow} 个 DDL 未展示"
+        half_width = footer_font.getlength(label) / 2 + 22
+        draw.rounded_rectangle(
+            (
+                WIDTH / 2 - half_width,
+                height - MARGIN - 48,
+                WIDTH / 2 + half_width,
+                height - MARGIN + 4,
+            ),
+            radius=16,
+            fill="#48566D",
+        )
         draw.text(
-            (WIDTH / 2, height - MARGIN - 8),
-            f"还有 {overflow} 个 DDL 未展示",
+            (WIDTH / 2, height - MARGIN - 24),
+            label,
             font=footer_font,
-            fill="#526178",
-            anchor="ms",
+            fill=WHITE,
+            anchor="mm",
         )
     with BytesIO() as output:
         canvas.save(output, format="PNG", optimize=True)

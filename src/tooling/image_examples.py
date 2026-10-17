@@ -44,7 +44,10 @@ def main():
         "03-long-titles.png": [
             task("项目最终验收报告与完整附件材料提交截止", minutes=45),
             task("Machine Learning · Final Project", days=2, hours=6),
-            task("关于本学期跨学科综合实践项目结题报告及附件材料汇总提交的最后期限", days=8),
+            task(
+                "关于本学期跨学科综合实践项目结题报告及附件材料汇总提交的最后期限",
+                days=8,
+            ),
         ],
         "04-empty.png": [],
     }

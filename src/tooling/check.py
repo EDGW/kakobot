@@ -55,8 +55,18 @@ def check(root):
     for key in ("enabled_analysis_tasks", "autoanalysis_disabled_users"):
         if not isinstance(config[key]["default"], list):
             raise ValueError(f"配置 {key} 的默认值应为列表。")
-    for name in ("README.md", "DEADLINE.md", "DESIGN.md"):
-        body = (root / name).read_text(encoding="utf-8")
+    font = root / "assets/fonts/NotoSansSC.ttf"
+    if not font.is_file() or font.read_bytes()[:4] != b"\x00\x01\x00\x00":
+        raise ValueError("DDL 图片缺少有效的随包中文 TrueType 字体。")
+    if "SIL OPEN FONT LICENSE" not in (root / "assets/fonts/OFL.txt").read_text(
+        encoding="utf-8"
+    ):
+        raise ValueError("中文字体缺少 OFL 许可证。")
+    for name in ("README.md", "DESIGN.md"):
+        document = root / name
+        if name == "DESIGN.md" and not document.is_file():
+            continue
+        body = document.read_text(encoding="utf-8")
         if len(re.findall(r"^```", body, re.MULTILINE)) % 2:
             raise ValueError(f"{name} 代码围栏不完整。")
         for block in re.findall(r"```json\n(.*?)\n```", body, re.DOTALL):

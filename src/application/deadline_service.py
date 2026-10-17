@@ -14,8 +14,8 @@ from ..domain.security import SecretViolation
 from ..domain.text import display_name
 from ..infrastructure.messages import command_body, visible_text
 from ..infrastructure.onebot import ReadonlyViolation
-from ..presentation.deadlines import show_task
 from ..presentation.deadline_image import MAX_CARDS, active_tasks, render_deadlines
+from ..presentation.deadlines import show_task
 
 
 class DeadlineService:
@@ -25,6 +25,7 @@ class DeadlineService:
         self.data, self.roles, self.readonly, self.guard = data, roles, readonly, guard
         self.extractor, self.authorizer, self.sessions = extractor, authorizer, sessions
         self.preferences = preferences
+        self.image_slots = asyncio.Semaphore(2)
         self.versions = {}
         self.failed = False
         readonly.listeners.append(self.readonly_changed)
@@ -79,16 +80,20 @@ class DeadlineService:
         if sub == "view":
             if value.strip():
                 raise BusinessError("用法：/ddl view")
-            async with self.data.lock:
-                now = time.time()
-                tasks = active_tasks(self.data.list(ctx.scope, now), now)
-            # Inspect full source titles before rasterization can hide them from
-            # the shared outgoing text filter (including any ellipsized suffix).
-            self.guard.secrets.check([task["title"] for task in tasks[:MAX_CARDS]])
-            png = await asyncio.to_thread(render_deadlines, tasks, now)
+            async with self.image_slots:
+                async with self.data.lock:
+                    now = time.time()
+                    tasks = active_tasks(self.data.list(ctx.scope, now), now)
+                # Inspect full source titles before rasterization can hide them
+                # from the text filter (including any ellipsized suffix).
+                self.guard.secrets.check([task["title"] for task in tasks[:MAX_CARDS]])
+                png = await asyncio.to_thread(render_deadlines, tasks, now)
             await self.authorizer.authorize(action.spec, ctx, action.arguments, gateway)
             self.check_writable(ctx)
-            await gateway.send_image(png, group=ctx.group, user="" if ctx.group else ctx.actor)
+            self.guard.secrets.check([task["title"] for task in tasks[:MAX_CARDS]])
+            await gateway.send_image(
+                png, group=ctx.group, user="" if ctx.group else ctx.actor
+            )
             return None
         if sub == "list":
             page = int(qq_id(value)) if value else 1

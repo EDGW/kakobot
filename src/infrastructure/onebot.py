@@ -297,14 +297,23 @@ class OneBotGateway:
             raise ValueError("必须指定且只能指定一个群或私聊目标。")
         if not png.startswith(b"\x89PNG\r\n\x1a\n"):
             raise ValueError("图片必须为 PNG 格式。")
-        destination = {"group_id": int(qq_id(group))} if group else {"user_id": int(qq_id(user))}
+        destination = (
+            {"group_id": int(qq_id(group))} if group else {"user_id": int(qq_id(user))}
+        )
         # A native image segment bypasses only text-forward formatting; the
         # guarded client still validates the destination and full payload.
         await self.bot.call_action(
             "send_group_msg" if group else "send_private_msg",
             **destination,
             self_id=self.self_id,
-            message=[{"type": "image", "data": {"file": "base64://" + base64.b64encode(png).decode("ascii")}}],
+            message=[
+                {
+                    "type": "image",
+                    "data": {
+                        "file": "base64://" + base64.b64encode(png).decode("ascii")
+                    },
+                }
+            ],
         )
 
     async def message(self, identifier: str) -> dict:

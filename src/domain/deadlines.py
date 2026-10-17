@@ -12,7 +12,7 @@ BEIJING = timezone(timedelta(hours=8))
 DEFAULT_MINUTES = (30, 180, 720, 1440, 2160)
 MAX_REMINDERS = 20
 FINAL_GRACE_SECONDS = 60
-USAGE = '/ddl add 内容 | /ddl add-strict "NAME" [YYYY-MM-DD HH:mm] -30min,-3h;@成员 | /ddl defaulttime ["提示词"] | /ddl list | /ddl show ID | /ddl remove ID | /ddl clear [GROUP|this|all]'
+USAGE = '/ddl add 内容 | /ddl add-strict "NAME" [YYYY-MM-DD HH:mm] -30min,-3h;@成员 | /ddl defaulttime ["提示词"] | /ddl list | /ddl view | /ddl show ID | /ddl remove ID | /ddl clear [GROUP|this|all]'
 
 
 @dataclass(frozen=True)

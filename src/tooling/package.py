@@ -23,8 +23,6 @@ def main():
         "_conf_schema.json",
         "requirements.txt",
         "README.md",
-        "DESIGN.md",
-        "DEADLINE.md",
     ]
     names += [
         str(path.relative_to(root))

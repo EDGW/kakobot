@@ -1,1 +1,1 @@
-"""KakoBot 1.1.0: scoped commands and personal DDL analysis for AstrBot."""
+"""KakoBot 1.2.0: scoped commands, DDL analysis and local card images."""
