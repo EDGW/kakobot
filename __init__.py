@@ -1,1 +1,1 @@
-"""KakoBot 1.2.0: scoped commands, DDL analysis and local card images."""
+"""KakoBot 1.2.1: scoped commands, DDL analysis and local card images."""
