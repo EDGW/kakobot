@@ -1,0 +1,109 @@
+name: Publish plugin ZIP
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, for example v1.2.1
+        type: string
+        required: true
+      prerelease:
+        description: Publish as a pre-release
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      archive: ${{ steps.version.outputs.archive }}
+    steps:
+      - name: Check out version tag
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Validate release version
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag) is None:
+              raise SystemExit("Version tags must use vMAJOR.MINOR.PATCH.")
+          metadata = Path("metadata.yaml").read_text(encoding="utf-8")
+          version = re.search(r"^version:\s*(v[0-9.]+)\s*$", metadata, re.MULTILINE)
+          if version is None or version[1] != tag:
+              raise SystemExit("Version tag and metadata.yaml version must match.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"tag={tag}\narchive=astrbot_plugin_kakobot-{tag}.zip\n")
+          PY
+
+      - name: Build and verify installable ZIP
+        run: python -m src.tooling.package
+
+      - name: Save installable ZIP
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: kakobot-${{ steps.version.outputs.tag }}
+          path: dist/${{ steps.version.outputs.archive }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified ZIP
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: kakobot-${{ needs.build.outputs.tag }}
+          path: dist
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          ARCHIVE_NAME: ${{ needs.build.outputs.archive }}
+          PRERELEASE: ${{ github.event_name == 'push' || inputs.prerelease }}
+        run: |
+          asset="dist/$ARCHIVE_NAME"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$asset" --clobber
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"
+          else
+            options=(--verify-tag --title "KakoBot $RELEASE_TAG" --generate-notes)
+            if [[ "$PRERELEASE" == "true" ]]; then
+              options+=(--prerelease --latest=false)
+            fi
+            gh release create "$RELEASE_TAG" "$asset" "${options[@]}"
+          fi
