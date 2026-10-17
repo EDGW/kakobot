@@ -5,7 +5,7 @@ from itertools import count
 from pathlib import Path
 
 from ..domain.deadlines import BEIJING
-from ..presentation.deadline_image import render_deadlines
+from ..presentation.deadline_image import render_deadlines, render_reminder
 
 
 def main():
@@ -101,6 +101,24 @@ def main():
     for name, tasks in group_examples.items():
         path = output / name
         path.write_bytes(render_deadlines(tasks, now.timestamp(), group=True))
+        print(path)
+    reminder_examples = {
+        "09-group-reminder-advance.png": group_task(
+            "AAA与BBB提交机器学习课程项目",
+            "AAA(33221122)、BBB(11223344)",
+            days=3,
+            hours=8,
+        ),
+        "10-group-reminder-due.png": {
+            "id": 7,
+            "title": "叫AAA请BBB吃饭",
+            "participant_label": "AAA(33221122)、BBB(11223344)",
+            "deadline": now.timestamp() - 15,
+        },
+    }
+    for name, item in reminder_examples.items():
+        path = output / name
+        path.write_bytes(render_reminder(item, now.timestamp()))
         print(path)
 
 

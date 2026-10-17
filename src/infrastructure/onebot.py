@@ -17,6 +17,16 @@ from .readonly import ReadonlyPolicy
 logger = logging.getLogger("astrbot")
 _DDL_SILENT = ContextVar("kakobot_ddl_silent", default=False)
 _FORMAT_TEXT = ContextVar("kakobot_format_text", default=False)
+SPARK_FACE_ID = "424"  # NapCat /续标识: native large animated "续火花" sticker.
+
+
+def image_segment(png: bytes) -> dict:
+    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("图片必须为 PNG 格式。")
+    return {
+        "type": "image",
+        "data": {"file": "base64://" + base64.b64encode(png).decode("ascii")},
+    }
 
 
 @contextmanager
@@ -255,6 +265,28 @@ class OneBotGateway:
         finally:
             _FORMAT_TEXT.reset(token)
 
+    async def remind_card(self, group: str, users: list[str], png: bytes):
+        group_id = int(qq_id(group))
+        if not 1 <= len(users) <= 20:
+            raise ValueError("DDL 提醒须通知1～20名成员。")
+        mentions = [{"type": "at", "data": {"qq": qq_id(user)}} for user in users]
+        card = image_segment(png)
+        with deadline_context():
+            # Deliver the useful reminder first; a large animated face is sent
+            # alone so QQ keeps its native sticker presentation.
+            await self.bot.call_action(
+                "send_group_msg",
+                group_id=group_id,
+                self_id=self.self_id,
+                message=mentions + [card],
+            )
+            await self.bot.call_action(
+                "send_group_msg",
+                group_id=group_id,
+                self_id=self.self_id,
+                message=[{"type": "face", "data": {"id": SPARK_FACE_ID}}],
+            )
+
     async def send(self, *, text: str, group: str = "", user: str = "") -> None:
         if bool(group) == bool(user):
             raise ValueError("必须指定且只能指定一个群或私聊目标。")
@@ -295,8 +327,7 @@ class OneBotGateway:
     async def send_image(self, png: bytes, *, group: str = "", user: str = ""):
         if bool(group) == bool(user):
             raise ValueError("必须指定且只能指定一个群或私聊目标。")
-        if not png.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise ValueError("图片必须为 PNG 格式。")
+        card = image_segment(png)
         destination = (
             {"group_id": int(qq_id(group))} if group else {"user_id": int(qq_id(user))}
         )
@@ -306,14 +337,7 @@ class OneBotGateway:
             "send_group_msg" if group else "send_private_msg",
             **destination,
             self_id=self.self_id,
-            message=[
-                {
-                    "type": "image",
-                    "data": {
-                        "file": "base64://" + base64.b64encode(png).decode("ascii")
-                    },
-                }
-            ],
+            message=[card],
         )
 
     async def message(self, identifier: str) -> dict:

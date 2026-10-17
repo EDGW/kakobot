@@ -53,6 +53,8 @@ def urgency(deadline, now):
 
 def remaining(deadline, now):
     seconds = max(0, deadline - now)
+    if seconds == 0:
+        return "已到期"
     if seconds < 60:
         return "不足1分钟"
     minutes = math.ceil(seconds / 60)
@@ -110,7 +112,15 @@ def _participant_lines(text, available, fonts):
 
 def render_deadlines(tasks, now, *, group=False):
     """Return a single PNG; no network, model, names lookup or persistent files."""
-    tasks = active_tasks(tasks, now)
+    return _render_cards(active_tasks(tasks, now), now, group=group)
+
+
+def render_reminder(task, now, *, group=True):
+    """One red card, including a due task during the scheduler's grace period."""
+    return _render_cards([task], now, group=group, color=COLORS["today"])
+
+
+def _render_cards(tasks, now, *, group, color=None):
     visible, overflow = tasks[:MAX_CARDS], max(0, len(tasks) - MAX_CARDS)
     participant_fonts = [_font(size) for size in (28, 26, 24)] if group else []
     participant_rows = (
@@ -157,7 +167,7 @@ def render_deadlines(tasks, now, *, group=False):
         draw.rounded_rectangle(
             (MARGIN, top, WIDTH - MARGIN, top + card_height),
             radius=24,
-            fill=COLORS[urgency(task["deadline"], now)],
+            fill=color or COLORS[urgency(task["deadline"], now)],
         )
         left, right = MARGIN + 36, WIDTH - MARGIN - 36
         title, font = _title(
@@ -178,7 +188,11 @@ def render_deadlines(tasks, now, *, group=False):
             "%Y-%m-%d %H:%M"
         )
         due = f"DDL  {deadline}"
-        rest = "剩余 " + remaining(task["deadline"], now)
+        rest = (
+            "已到期"
+            if task["deadline"] <= now
+            else "剩余 " + remaining(task["deadline"], now)
+        )
         detail_font = next(
             (
                 font
