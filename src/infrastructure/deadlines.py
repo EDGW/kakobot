@@ -153,6 +153,15 @@ class DeadlineStore:
     def close(self):
         self.db.close()
 
+    def private_contacts(self):
+        return {
+            tuple(row)
+            for row in self.db.execute(
+                "SELECT platform,bot,conversation FROM tasks WHERE location='CHAT' "
+                "UNION SELECT platform,bot,actor FROM analysis_events"
+            )
+        }
+
     def get(self, scope: Scope, identifier: int) -> dict:
         row = self.db.execute(
             "SELECT * FROM tasks WHERE " + WHERE + " AND id=?", (*scope, identifier)

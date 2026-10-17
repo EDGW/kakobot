@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from ..domain.analysis import referenced_deadlines
+from ..domain.costs import UsageContext
 from ..domain.deadlines import BEIJING
 from ..domain.errors import BusinessError
 from ..infrastructure.messages import MessageExpander
@@ -160,6 +161,7 @@ class AutomaticAnalysis:
                 preference=preference,
                 direct_text=direct_text,
                 actor_profile=await names.profile(ctx.actor),
+                usage_context=UsageContext.from_command(ctx, "autoanalysis.ddl"),
             )
             if not self.enabled(ctx):
                 raise BusinessError("自动分析资格已变更，未注册任务。")

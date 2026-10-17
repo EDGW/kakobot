@@ -2,6 +2,7 @@
 
 import json
 
+from ..domain.costs import UsageContext
 from ..domain.errors import BusinessError
 from ..infrastructure.messages import MessageExpander, command_body
 
@@ -30,7 +31,13 @@ class SummaryService:
                     return "目标群暂无可读取的历史消息。"
                 self.model.secrets.check(history)
                 result = await self.model.summarize(
-                    group, history, preflight=preflight, on_submitted=on_submitted
+                    group,
+                    history,
+                    preflight=preflight,
+                    on_submitted=on_submitted,
+                    usage_context=UsageContext.from_command(
+                        ctx, "summary", group=group
+                    ),
                 )
                 return f"群 {await names.group(group)} 最近 {len(history)} 条消息总结：\n{result}"
             if (
@@ -54,7 +61,11 @@ class SummaryService:
                     raise BusinessError("记录中没有可读取的文字。")
                 content = json.dumps(nodes, ensure_ascii=False)
             text, tokens = await self.model.request(
-                RULES, content, preflight=preflight, on_submitted=on_submitted
+                RULES,
+                content,
+                preflight=preflight,
+                on_submitted=on_submitted,
+                usage_context=UsageContext.from_command(ctx, "summary"),
             )
             return (
                 f"{text}\n\n（+{tokens if tokens is not None else '未知'} tokens used)"

@@ -1,6 +1,7 @@
 """Reject outbound QQ payloads containing configured API credentials."""
 
 from collections.abc import Mapping
+from json import dumps
 
 
 class SecretViolation(PermissionError):
@@ -37,6 +38,18 @@ class SecretFilter:
     def check(self, payload) -> None:
         if self.contains(payload):
             raise SecretViolation()
+
+    def redact(self, text: str) -> str:
+        """Mask current and previously observed credentials in diagnostic text."""
+        self._refresh()
+        variants = {
+            value
+            for key in self._keys
+            for value in (key, dumps(key)[1:-1], dumps(key, ensure_ascii=False)[1:-1])
+        }
+        for value in sorted(variants, key=len, reverse=True):
+            text = text.replace(value, "[API_KEY_REDACTED]")
+        return text
 
 
 def _strings(value):

@@ -22,6 +22,18 @@
     "default": "",
     "hint": "留空不传此参数，使用模型默认值。可按模型支持填写 low、medium、high 等；不支持时 API 会返回错误并通知 Super。"
   },
+  "input_price_per_million_cny": {
+    "description": "每百万输入 tokens 的人民币价格",
+    "type": "float",
+    "default": 0.0,
+    "hint": "单位：元/MTokens，须为非负数。用于 /cost 费用估算；按请求当时的价格保存，改价不影响历史账单。默认0表示暂按0元计费，缓存输入不单独折扣。"
+  },
+  "output_price_per_million_cny": {
+    "description": "每百万输出 tokens 的人民币价格",
+    "type": "float",
+    "default": 0.0,
+    "hint": "单位：元/MTokens，须为非负数。用于 /cost 费用估算；按请求当时的价格保存，改价不影响历史账单。输出 usage 已包含思考 tokens，不会重复累计。"
+  },
   "api_address": {
     "description": "OpenAI 兼容 API 地址",
     "type": "string",

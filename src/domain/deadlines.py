@@ -25,7 +25,7 @@ class DeadlinePlan:
 @dataclass(frozen=True)
 class DeadlineConfirmation:
     text: str
-    created: bool
+    refresh_view: bool
 
 
 def title_key(title):

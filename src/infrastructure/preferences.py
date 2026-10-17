@@ -45,6 +45,9 @@ class PreferenceStore:
     def _key(item):
         return item["platform"], item["bot"], item["actor"]
 
+    def owners(self):
+        return {self._key(item) for item in self.data["users"]}
+
     def get(self, ctx):
         key = ctx.platform, ctx.bot, ctx.actor
         return next(

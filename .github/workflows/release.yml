@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag, for example v1.2.1
+        description: Existing version tag, for example v1.2.2
         type: string
         required: true
       prerelease:
@@ -59,6 +59,17 @@ jobs:
           version = re.search(r"^version:\s*(v[0-9.]+)\s*$", metadata, re.MULTILINE)
           if version is None or version[1] != tag:
               raise SystemExit("Version tag and metadata.yaml version must match.")
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          sections = re.split(r"^## ", changelog, flags=re.MULTILINE)
+          notes = next(
+              (section.partition("\n")[2].strip() for section in sections[1:]
+               if section.partition("\n")[0].strip() == tag),
+              "",
+          )
+          if not notes:
+              raise SystemExit("CHANGELOG.md must contain release notes for this tag.")
+          Path("dist").mkdir(exist_ok=True)
+          Path("dist/release-notes.md").write_text(notes + "\n", encoding="utf-8")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"tag={tag}\narchive=astrbot_plugin_kakobot-{tag}.zip\n")
           PY
@@ -70,7 +81,9 @@ jobs:
         uses: actions/upload-artifact@v7.0.2
         with:
           name: kakobot-${{ steps.version.outputs.tag }}
-          path: dist/${{ steps.version.outputs.archive }}
+          path: |
+            dist/${{ steps.version.outputs.archive }}
+            dist/release-notes.md
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -99,9 +112,9 @@ jobs:
           asset="dist/$ARCHIVE_NAME"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" "$asset" --clobber
-            gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE" --notes-file dist/release-notes.md
           else
-            options=(--verify-tag --title "KakoBot $RELEASE_TAG" --generate-notes)
+            options=(--verify-tag --title "KakoBot $RELEASE_TAG" --notes-file dist/release-notes.md)
             if [[ "$PRERELEASE" == "true" ]]; then
               options+=(--prerelease --latest=false)
             fi

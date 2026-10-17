@@ -8,6 +8,7 @@ from datetime import datetime
 
 from ..domain.analysis import DEFAULT_TIME_PROMPT, MAX_DEFAULT_PROMPT
 from ..domain.context import qq_id
+from ..domain.costs import UsageContext
 from ..domain.deadlines import (
     BEIJING,
     DeadlineConfirmation,
@@ -111,7 +112,9 @@ class DeadlineService:
         async with self.data.lock:
             task = self.data.get(ctx.scope, identifier)
             if sub == "remove":
-                return self.data.remove(ctx.scope, identifier, ctx.actor)
+                return DeadlineConfirmation(
+                    self.data.remove(ctx.scope, identifier, ctx.actor), True
+                )
         return await show_task(task, names, time.time())
 
     async def send_view(self, ctx, gateway, names):
@@ -295,6 +298,7 @@ class DeadlineService:
                     ]
                     if ctx.group
                     else (),
+                    usage_context=UsageContext.from_command(ctx, "ddl.add"),
                 )
                 plans, rejected = extracted.plans, extracted.rejected
             method = "manual"
@@ -424,7 +428,7 @@ class DeadlineService:
         ]
         return DeadlineConfirmation(
             "\n\n".join(lines + rejected) or "未发现可添加的未过期 DDL。",
-            any(created for _, created in identifiers),
+            bool(valid_updates) or any(created for _, created in identifiers),
         )
 
     async def clear(self, action, gateway, names):
@@ -441,7 +445,8 @@ class DeadlineService:
             self.versions[key] = self.versions.get(key, 0) + 1
             cleared = self.data.clear(ctx.platform, ctx.bot, location, conversation)
         if location == "CHAT":
-            return f"已清除你的 {sum(item['count'] for item in cleared.values())} 条个人 DDL。"
+            count = sum(item["count"] for item in cleared.values())
+            return DeadlineConfirmation(f"已清除你的 {count} 条个人 DDL。", count > 0)
         lines = []
         for group, entry in cleared.items():
             label = await names.group(group)
@@ -461,4 +466,6 @@ class DeadlineService:
                     gateway.bot, gateway.self_id, f"清除通知；群 {group}", exc
                 )
             lines.append(f"群 {label}：{entry['count']} 条，{state}")
-        return "\n".join(lines) if lines else "没有可清除的 DDL。"
+        return DeadlineConfirmation(
+            "\n".join(lines) if lines else "没有可清除的 DDL。", ctx.group in cleared
+        )

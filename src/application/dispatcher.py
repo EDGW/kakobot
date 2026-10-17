@@ -8,6 +8,7 @@ from ..domain.deadlines import DeadlineConfirmation
 from ..domain.errors import BusinessError, ModelError
 from ..domain.security import SecretViolation
 from ..infrastructure.onebot import ReadonlyViolation, deadline_context
+from ..presentation.help import render_help
 from ..presentation.names import NameDirectory
 
 logger = logging.getLogger("astrbot")
@@ -24,6 +25,8 @@ class Dispatcher:
         deadlines,
         summaries,
         analysis,
+        costs,
+        announcements,
     ):
         self.roles, self.readonly, self.guard, self.authorizer = (
             roles,
@@ -37,6 +40,8 @@ class Dispatcher:
             summaries,
             analysis,
         )
+        self.costs = costs
+        self.announcements = announcements
 
     def should_handle(self, ctx):
         if ctx.actor == ctx.bot or (ctx.group and not ctx.mentioned_bot):
@@ -82,12 +87,12 @@ class Dispatcher:
                     show_view = False
                     for message in reply if isinstance(reply, list) else [reply]:
                         if isinstance(message, DeadlineConfirmation):
-                            show_view |= message.created
+                            show_view |= message.refresh_view
                             message = message.text
                         if message:
                             await self.reply(ctx, gateway, message)
                     if show_view:
-                        await self.created_view(ctx, gateway, names)
+                        await self.updated_view(ctx, gateway, names)
             except ReadonlyViolation:
                 return
             except SecretViolation as exc:
@@ -121,6 +126,10 @@ class Dispatcher:
             return await self.summaries.handle(action, gateway, names, on_submitted)
         if handler == "help":
             return self.help(action.context, action.arguments)
+        if handler == "cost":
+            return await self.costs.handle(action, names)
+        if handler in {"announce", "announce_reject"}:
+            return await self.announcements.handle(action, gateway)
         if handler == "readonly":
             parts = action.arguments.split()
             if action.spec.subcommand == "list":
@@ -165,23 +174,11 @@ class Dispatcher:
                 or spec.name.removeprefix("/") == query
             )
         ]
-        if not matches:
-            raise BusinessError("没有可用的对应命令。")
-        sources = self.roles.sources(ctx.actor)
-        if ctx.group:
-            sources.update(self.roles.sources(ctx.actor, ctx.group, True))
-        details = (
-            "；".join(
-                f"{role}（{', '.join(origin)}）"
-                for role, origin in sorted(sources.items())
-            )
-            or "无"
-        )
-        return (
-            f"KakoBot {ctx.location} 帮助\n身份组：{details}\n"
-            + ("群内均须真实@机器人。\n" if ctx.group else "")
-            + "\n".join(f"{spec.usage}：{spec.description}" for spec in matches)
-            + "\n日期均按北京时间；任务一次性，最多20个通知时间。AI 默认到期再通知一次，明确取消除外；严格模式默认仅五个提前节点。私聊自动分析可通过 /ddl defaulttime 设置默认提示词，明确指定编号及修改要求可修改个人任务。群任务隔离，个人任务只属于本人。"
+        return render_help(
+            ctx,
+            matches,
+            roles,
+            autoanalysis_enabled=self.analysis.enabled(ctx),
         )
 
     async def reply(self, ctx, gateway, text):
@@ -190,17 +187,19 @@ class Dispatcher:
             text=text, group=ctx.group, user="" if ctx.group else ctx.actor
         )
 
-    async def created_view(self, ctx, gateway, names):
+    async def updated_view(self, ctx, gateway, names):
         try:
             await self.deadlines.send_view(ctx, gateway, names)
         except ReadonlyViolation:
             return
         except Exception as exc:
             await self.guard.report_error(
-                gateway.bot, ctx.bot, "DDL 已添加；自动发送 view 图片", exc
+                gateway.bot, ctx.bot, "DDL 操作已完成；自动发送 view 图片", exc
             )
             await self.safe_reply(
-                ctx, gateway, "DDL 已添加，但预览图片未能发送，可稍后使用 /ddl view。"
+                ctx,
+                gateway,
+                "DDL 操作已完成，但预览图片未能发送，可稍后使用 /ddl view。",
             )
 
     async def safe_reply(self, ctx, gateway, text):

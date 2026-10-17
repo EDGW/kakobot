@@ -275,6 +275,7 @@ class AstrBotAdapter:
         ctx = incoming(event, platform_id)
         self.routes[(platform_id, ctx.bot)] = event.bot
         if not self.runtime.dispatcher.should_handle(ctx):
+            self.runtime.observe(ctx)
             return
         event.stop_event()
         await self.runtime.handle(ctx, OneBotGateway(event.bot, ctx.bot, platform_id))

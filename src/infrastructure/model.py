@@ -2,13 +2,19 @@
 
 import asyncio
 import json
+import logging
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 
+from ..domain.costs import TokenPrices, TokenUsage
 from ..domain.errors import ModelError
 from ..domain.security import SecretFilter
+
+logger = logging.getLogger("astrbot")
 
 
 class SubmissionStream(httpx.AsyncByteStream):
@@ -31,14 +37,21 @@ class SubmissionStream(httpx.AsyncByteStream):
 class ModelClient:
     """Use explicit plugin model settings without depending on AstrBot chat state."""
 
-    def __init__(self, config: dict, client: httpx.AsyncClient):
+    def __init__(self, config: dict, client: httpx.AsyncClient, usage):
         self.config = config
         self.client = client
+        self.usage = usage
         self.secrets = SecretFilter(config)
         self.slots = asyncio.Semaphore(2)
 
     async def summarize(
-        self, group: str, messages: list[dict], preflight=None, on_submitted=None
+        self,
+        group: str,
+        messages: list[dict],
+        preflight=None,
+        on_submitted=None,
+        *,
+        usage_context,
     ) -> str:
         text, tokens = await self.request(
             "你是群聊总结助手。用中文总结提供的聊天记录，归纳主题、结论、待办和明确的时间信息。"
@@ -50,22 +63,31 @@ class ModelClient:
             ),
             preflight=preflight,
             on_submitted=on_submitted,
+            usage_context=usage_context,
         )
         return f"{text}\n\n（+{tokens if tokens is not None else '未知'} tokens used)"
 
     async def request(
-        self, instructions: str, content: str, preflight=None, on_submitted=None
+        self,
+        instructions: str,
+        content: str,
+        preflight=None,
+        on_submitted=None,
+        *,
+        usage_context,
     ) -> tuple[str, int | None]:
         self.secrets.check(content)
         async with self.slots:
             if preflight:
                 await preflight()
-            result = await self._request(instructions, content, on_submitted)
+            result = await self._request(
+                instructions, content, usage_context, on_submitted
+            )
         self.secrets.check(result[0])
         return result
 
     async def _request(
-        self, instructions: str, content: str, on_submitted=None
+        self, instructions: str, content: str, usage_context, on_submitted=None
     ) -> tuple[str, int | None]:
         """Send one independent, tool-free Responses request with explicit rules."""
         key = str(self.config.get("api_key", "")).strip()
@@ -73,6 +95,10 @@ class ModelClient:
         address = str(self.config.get("api_address", "")).strip().rstrip("/")
         if not key or not model or not address:
             raise ModelError("请先配置 api_key、model_name 和 api_address。")
+        try:
+            prices = TokenPrices.from_config(self.config)
+        except ValueError as exc:
+            raise ModelError(str(exc)) from exc
         parsed = urlsplit(address)
         if (
             parsed.scheme not in {"http", "https"}
@@ -111,74 +137,125 @@ class ModelClient:
         effort = str(self.config.get("reasoning_effort") or "").strip()
         if effort:
             payload["reasoning"] = {"effort": effort}
+        request_id = uuid4().hex
+        request = self.client.build_request(
+            "POST",
+            endpoint,
+            headers={"Authorization": f"Bearer {key}"},
+            json=payload,
+            timeout=90,
+        )
+        request.stream = SubmissionStream(request.stream, on_submitted)
+        # Commit an entry before any paid network operation. A process crash
+        # leaves an explicit unknown-usage entry instead of silently losing it.
+        self.usage.begin(request_id, usage_context, model, prices, time.time())
+        response, data, state = None, None, "failed"
         try:
-            request = self.client.build_request(
-                "POST",
-                endpoint,
-                headers={"Authorization": f"Bearer {key}"},
-                json=payload,
-                timeout=90,
+            response = await self._send(request, payload, request_id)
+            parse_error = None
+            try:
+                data = _response_data(response)
+                if not isinstance(data, dict):
+                    raise ValueError("Response is not an object")
+            except (ValueError, TypeError) as exc:
+                parse_error = exc
+            if not response.is_success:
+                raise ModelError(
+                    f"模型 API 返回 HTTP {response.status_code}，请检查配置或额度。",
+                    diagnostic=_response_diagnostic(response),
+                )
+            if parse_error:
+                raise ModelError(
+                    "模型 API 未返回有效的 Responses 数据。",
+                    diagnostic=_response_diagnostic(response),
+                ) from parse_error
+            text = _output_text(data, response)
+            state = "completed"
+            return text, TokenUsage.parse(data.get("usage")).total
+        except asyncio.CancelledError:
+            state = "interrupted"
+            raise
+        finally:
+            self.usage.finish(
+                request_id,
+                TokenUsage.parse(data.get("usage") if isinstance(data, dict) else None),
+                state,
+                response.status_code if response is not None else None,
+                time.time(),
             )
-            request.stream = SubmissionStream(request.stream, on_submitted)
+
+    async def _send(self, request, payload, request_id):
+        try:
+            logger.info(
+                "[KakoBot] AI 请求 %s\nPOST %s\n完整请求正文：\n%s",
+                request_id,
+                self.secrets.redact(str(request.url)),
+                self.secrets.redact(json.dumps(payload, ensure_ascii=False, indent=2)),
+            )
             response = await self.client.send(request, follow_redirects=False)
         except httpx.TimeoutException as exc:
+            logger.error(
+                "[KakoBot] AI 请求 %s 超时：%s",
+                request_id,
+                self.secrets.redact(f"{type(exc).__name__}: {exc}"),
+            )
             raise ModelError(
                 "模型请求超时，请稍后重试。",
                 diagnostic=f"底层错误：{type(exc).__name__}: {exc}",
             ) from exc
         except httpx.HTTPError as exc:
+            logger.error(
+                "[KakoBot] AI 请求 %s 失败：%s",
+                request_id,
+                self.secrets.redact(f"{type(exc).__name__}: {exc}"),
+            )
             raise ModelError(
                 "无法连接模型 API，请检查地址及网络。",
                 diagnostic=f"底层错误：{type(exc).__name__}: {exc}",
             ) from exc
-        if not response.is_success:
-            raise ModelError(
-                f"模型 API 返回 HTTP {response.status_code}，请检查配置或额度。",
-                diagnostic=_response_diagnostic(response),
-            )
-        try:
-            data = _response_data(response)
-            if not isinstance(data, dict):
-                raise ValueError("Response is not an object")
-        except (ValueError, TypeError) as exc:
-            raise ModelError(
-                "模型 API 未返回有效的 Responses 数据。",
-                diagnostic=_response_diagnostic(response),
-            ) from exc
-        if data.get("error") or data.get("status") not in (None, "completed"):
-            raise ModelError(
-                "模型 API 未完成总结，请检查 Super 错误通知。",
-                diagnostic=_response_diagnostic(response),
-            )
-        output = data.get("output")
-        if not isinstance(output, list):
-            raise ModelError(
-                "模型 API 未返回有效的 Responses 文本。",
-                diagnostic=_response_diagnostic(response),
-            )
-        texts = []
-        for item in output:
-            if not isinstance(item, dict) or item.get("type") != "message":
-                continue
-            if item.get("role") != "assistant":
-                continue
-            content = item.get("content")
-            if not isinstance(content, list):
-                continue
-            for part in content:
-                if (
-                    isinstance(part, dict)
-                    and part.get("type") == "output_text"
-                    and isinstance(part.get("text"), str)
-                ):
-                    texts.append(part["text"])
-        text = "".join(texts).strip()
-        if not text:
-            raise ModelError(
-                "模型 API 返回了空总结。",
-                diagnostic=_response_diagnostic(response),
-            )
-        return text, _total_tokens(data.get("usage"))
+        logger.info(
+            "[KakoBot] AI 回复 %s\n%s",
+            request_id,
+            self.secrets.redact(_response_diagnostic(response)),
+        )
+        return response
+
+
+def _output_text(data, response):
+    if data.get("error") or data.get("status") not in (None, "completed"):
+        raise ModelError(
+            "模型 API 未完成总结，请检查 Super 错误通知。",
+            diagnostic=_response_diagnostic(response),
+        )
+    output = data.get("output")
+    if not isinstance(output, list):
+        raise ModelError(
+            "模型 API 未返回有效的 Responses 文本。",
+            diagnostic=_response_diagnostic(response),
+        )
+    texts = []
+    for item in output:
+        if not isinstance(item, dict) or item.get("type") != "message":
+            continue
+        if item.get("role") != "assistant":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if (
+                isinstance(part, dict)
+                and part.get("type") == "output_text"
+                and isinstance(part.get("text"), str)
+            ):
+                texts.append(part["text"])
+    text = "".join(texts).strip()
+    if not text:
+        raise ModelError(
+            "模型 API 返回了空总结。",
+            diagnostic=_response_diagnostic(response),
+        )
+    return text
 
 
 def _response_data(response: httpx.Response):
@@ -203,29 +280,21 @@ def _response_data(response: httpx.Response):
             raise ValueError("Invalid Responses event")
         kind = event.get("type")
         if kind in ("error", "response.failed", "response.incomplete"):
-            return {"status": "failed", "error": event}
+            failed = event.get("response")
+            return {
+                "status": "failed",
+                "error": event,
+                "usage": (
+                    failed.get("usage")
+                    if isinstance(failed, dict)
+                    else event.get("usage")
+                ),
+            }
         if kind == "response.completed":
             completed = event.get("response")
     if not isinstance(completed, dict):
         raise ValueError("Responses stream ended without completion")
     return completed
-
-
-def _total_tokens(usage) -> int | None:
-    """Prefer provider totals; input/output counts already include cached/reasoning."""
-    if not isinstance(usage, dict):
-        return None
-
-    def valid(value):
-        return type(value) is int and value >= 0
-
-    total = usage.get("total_tokens")
-    if valid(total):
-        return total
-    input_tokens, output_tokens = usage.get("input_tokens"), usage.get("output_tokens")
-    if valid(input_tokens) and valid(output_tokens):
-        return input_tokens + output_tokens
-    return None
 
 
 def _response_diagnostic(response: httpx.Response) -> str:
