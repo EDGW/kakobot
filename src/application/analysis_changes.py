@@ -29,7 +29,11 @@ def validate_change(item, existing, direct_text):
     quote = item["instruction_quote"]
     if quote not in direct_text or item["id"] not in referenced_deadlines(quote):
         raise ValueError("DDL change is not grounded in a direct owner instruction")
-    if not re.search(r"改|调整|设置|更新|更名|命名|取消|加上|增加|换|设为|设成", quote):
+    if not re.search(
+        r"改|调整|设置|更新|更名|命名|取消|加上|增加|换|设为|设成|"
+        r"去掉|去除|删除|删掉|删去|移除",
+        quote,
+    ):
         raise ValueError("DDL change has no explicit modification request")
     changes = item["changes"]
     for field, keywords in {
