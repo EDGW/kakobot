@@ -1,7 +1,6 @@
-"""Validate explicit owner instructions before proposing personal DDL changes."""
+"""Validate change data and ground AI-selected edits in the owner's text."""
 
 import json
-import re
 
 from ..domain.analysis import TaskChange, referenced_deadlines
 from ..domain.deadlines import DeadlinePlan, _timestamp, make_plan
@@ -29,21 +28,7 @@ def validate_change(item, existing, direct_text):
     quote = item["instruction_quote"]
     if quote not in direct_text or item["id"] not in referenced_deadlines(quote):
         raise ValueError("DDL change is not grounded in a direct owner instruction")
-    if not re.search(
-        r"改|调整|设置|更新|更名|命名|取消|加上|增加|换|设为|设成|"
-        r"去掉|去除|删除|删掉|删去|移除",
-        quote,
-    ):
-        raise ValueError("DDL change has no explicit modification request")
     changes = item["changes"]
-    for field, keywords in {
-        "title": r"名|标题|叫",
-        "deadline_at": r"截止|到期|日期|DDL\s*时间",
-        "remind_at": r"提醒|通知|提示",
-        "notify_on_deadline": r"提醒|通知|提示",
-    }.items():
-        if field in changes and not re.search(keywords, quote, re.I):
-            raise ValueError("DDL field not explicitly requested by the owner")
     if "title" in changes and (
         not isinstance(changes["title"], str)
         or not 1 <= len(changes["title"].strip()) <= 200
