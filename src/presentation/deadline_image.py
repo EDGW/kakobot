@@ -115,7 +115,9 @@ def render_deadlines(tasks, now):
             fill=COLORS[urgency(task["deadline"], now)],
         )
         left, right = MARGIN + 36, WIDTH - MARGIN - 36
-        title, font = _title(task["title"], right - left, title_fonts)
+        title, font = _title(
+            f"#{task['id']} {task['title']}", right - left, title_fonts
+        )
         draw.text((left, top + 54), title, font=font, fill=WHITE, anchor="lm")
         deadline = datetime.fromtimestamp(task["deadline"], BEIJING).strftime(
             "%Y-%m-%d %H:%M"

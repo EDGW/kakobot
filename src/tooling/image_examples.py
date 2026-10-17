@@ -1,6 +1,7 @@
 """Generate requested DDL view samples locally, without AstrBot or AI calls."""
 
 from datetime import datetime, timedelta
+from itertools import count
 from pathlib import Path
 
 from ..domain.deadlines import BEIJING
@@ -12,9 +13,14 @@ def main():
     output = root / "examples/ddl-view"
     output.mkdir(parents=True, exist_ok=True)
     now = datetime(2026, 10, 17, 10, 0, tzinfo=BEIJING)
+    identifiers = count(1)
 
     def task(title, **offset):
-        return {"title": title, "deadline": (now + timedelta(**offset)).timestamp()}
+        return {
+            "id": next(identifiers),
+            "title": title,
+            "deadline": (now + timedelta(**offset)).timestamp(),
+        }
 
     examples = {
         "01-colors.png": [
