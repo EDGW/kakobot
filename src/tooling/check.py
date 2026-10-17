@@ -62,8 +62,12 @@ def check(root):
         encoding="utf-8"
     ):
         raise ValueError("中文字体缺少 OFL 许可证。")
-    for name in ("README.md", "DESIGN.md"):
-        document = root / name
+    for document in [
+        root / "README.md",
+        root / "DESIGN.md",
+        *sorted((root / "docs").rglob("*.md")),
+    ]:
+        name = str(document.relative_to(root))
         if name == "DESIGN.md" and not document.is_file():
             continue
         body = document.read_text(encoding="utf-8")
@@ -71,6 +75,11 @@ def check(root):
             raise ValueError(f"{name} 代码围栏不完整。")
         for block in re.findall(r"```json\n(.*?)\n```", body, re.DOTALL):
             json.loads(block)
+        if name != "DESIGN.md":
+            for target in re.findall(r"\]\(([^\s)]+)\)", body):
+                if "://" not in target and not target.startswith("#"):
+                    if not (document.parent / target.split("#")[0]).is_file():
+                        raise ValueError(f"{name} 文档链接不存在：{target}")
     print(
         f"静态校验通过：{len(files)} 个 Python 文件、层次与导入路径、版本 {expected}、配置及文档。"
     )

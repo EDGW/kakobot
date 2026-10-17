@@ -1,175 +1,45 @@
-# KakoBot 1.1.0
+# KakoBot
 
-AstrBot 的 OneBot v11 QQ 插件。提供统一身份组、群/个人 DDL、私聊嵌套聊天记录自动分析、消息总结，以及 Readonly 与 API Key 发送保护。完整行为约定见 [DESIGN.md](DESIGN.md)，DDL 使用说明见 [DEADLINE.md](DEADLINE.md)。
+AstrBot 的 OneBot v11 QQ 插件，支持群聊和个人 DDL 提醒、私聊消息及合并转发自动分析、聊天总结，以及 Super 管理。
 
-## 安装与升级
+## 安装
 
-将 `dist/astrbot_plugin_kakobot-v1.1.0.zip` 通过 AstrBot 插件管理安装，配置 `super_user`，使用 NapCat 等 OneBot v11 实现连接 QQ。保留现有插件数据目录；升级前先停止旧插件，不能让新旧版本并行操作同一份数据。
-
-1.1.0 新增 CHAT 自动识别的个人默认提醒提示词、明确指令下的已有个人 DDL 修改，以及 AI 独立私聊回复；每个 DDL 的通知上限提高到20次。身份组新增 Super 的群名单 reset 和全员 group.admin 开关，私聊 `/role` 可查看本人的全局和全部群身份组。保留转发只读可见正文（不调用历史 `get_msg`）、最多4层展开、已有列表去重、忽略过期任务，以及超过15行发送合并记录的处理。
-
-启动只读取 `StarTools.get_data_dir("astrbot_plugin_kakobot")` 下的 `version.json`：
-
-- 文件不存在，或内容为 `{"version":"0.5.4"}`：先备份旧权限和 SQLite 数据，再迁移。
-- 全部权限、Readonly 和 DDL 数据迁移、校验成功后，才原子写入 `{"version":"1.1.0"}` 并开放命令、自动分析和调度。
-- 已为 `1.0.0`、`1.0.1` 或 `1.0.2`：校验现有数据后，将版本标记更新为 `1.1.0`；保持当前名单和任务，不重跑旧数据迁移。默认提示词存入独立 `ddl_preferences.json`，未设置时不预建用户数据。
-- 已为 `1.1.0`：校验当前数据，不重复迁移。损坏、不可读或未知版本会停止启动，不重置名单或数据库。
-- 迁移可重入；备份保存在数据目录的 `migration-backup-0.5.4/`。旧任务的编号、通知对象、时间与发送状态保持不变；恢复调度时按原规则跳过离线节点。
-
-安装包不附带运行数据、密钥或 `version.json`。不要手工提前创建成功标记，不要将升级后的数据库直接交回旧版使用。
-
-## 配置
-
-| 配置 | 默认值 | 说明 |
-| --- | --- | --- |
-| `super_user` | `000000000` | 唯一 Super；占位值不会授予真实账号权限 |
-| `api_key` | 空 | 模型认证密钥；进入模型的材料和所有出站 QQ 内容均检查受保护密钥 |
-| `api_address` | `https://api.openai.com/v1` | Responses 基础地址或完整 `/responses` 地址 |
-| `model_name` | 空 | 模型名称 |
-| `reasoning_effort` | 空 | 思考强度；留空不传，按服务支持填写 |
-| `enabled_analysis_tasks` | `["ddl"]` | 启用的自动分析任务；空列表关闭；目前只支持 ddl |
-| `autoanalysis_disabled_users` | `[]` | 暂停这些账号的自动分析，保留身份组与手动命令权限 |
-
-实际模型请求正文发出后，会先在来源会话回复“已提交模型，正在处理，请稍候。”，再反馈结果或错误。没有进入模型、结构化创建或重复包复用不会发送此提示。
-
-模型请求独立使用 Responses，`store=false`，不携带全局记忆、不提供工具。可接受 SSE 或 JSON 响应，等完整结果后再反馈。API Key 只作为认证交给配置的模型服务，不进入提示词或 QQ 消息；更换配置后，已观察到的旧 Key 在当前运行期仍受保护。
-
-`roles.json` 保存直接授权及按群的 `group_admin_enabled` 配置，`readonly.json` 单独保存只读群。持久化配置默认 true，表示按名单校验；`/role group-admin on` 将其置为 false，开启全员 group.admin 模式，off 恢复为 true。此命令仅 Super 可用，不授予全局组，也不绕过 Readonly。
-
-## 身份组与命令位置
-
-`CHAT` 为私聊，`GROUP` 为群聊，`ALL` 表示两者。**群内所有命令均需真实 @机器人**。一个人可持有多个直接组，有效权限按下列关系计算：
+1. 从 [Releases](https://github.com/EDGW/kakobot/releases) 下载插件 ZIP，在 AstrBot 插件管理中安装。
+2. 通过 NapCat 等 OneBot v11 实现连接 QQ，配置 `super_user` 为自己的 QQ 号。
+3. 需要 AI 功能时，填写 `api_address`、`api_key` 和 `model_name`；服务需支持 Responses API。
+4. Super 私聊机器人，授权用户或群成员：
 
 ```text
-super → admin → autoanalysis → ddl、summary
-群内：group.admin → group.ddl、group.summary
+/super role add 123456789 autoanalysis
+/super role add 123456789 3333.ddl
 ```
 
-Super 只能来自配置。全局 admin 包含除 super 外的全部全局组；autoanalysis 包含除 super/admin 外的全部全局功能组。全局 ddl、summary、autoanalysis 不会自动授予各群身份组；全局 admin 通过命令权限使用群功能。群身份组与 QQ 原生管理员无关。
+第一条允许该用户私聊自动分析及使用个人 DDL、总结；第二条允许其在群 3333 创建 DDL。群身份组与 QQ 原生管理员无关。
 
-删除直接授权不屏蔽继承权限；回复会说明仍有效的组及来源。普通用户没有默认全局组。Readonly 在身份组之外检查，Super 也不能绕过。
+升级时保留插件数据目录，并先停止旧插件。
 
-### `/role`
+## 最基本的用法
 
-| 命令 | 要求 | 行为 |
-| --- | --- | --- |
-| `/role` | any / ALL | 查看本人全局组；私聊附带本人所有群组，群内仅附带本群组 |
-| `/role list [ROLE]` | super / ALL | 列出拥有指定组的人；省略组则列出范围内所有身份组成员 |
-| `/role add QQ ROLE` | super / ALL | 添加直接授权 |
-| `/role remove QQ ROLE` | super / ALL | 移除一项直接授权 |
-| `/role clear QQ [ROLE]` | super / ALL | 有 ROLE 时清除该项；否则清除该用户在可访问范围的全部直接授权 |
-| `/role reset [GROUP]` | super / ALL | 群内清空本群全部直接群身份组；私聊必须指定群号 |
-| `/role group-admin on\|off [GROUP]` | super / ALL | on 开启全员 group.admin，off 恢复名单校验；私聊必须指定群号 |
+**群内命令都需要先真实 @机器人；私聊直接发送。** 以下功能按身份组授权，`/help` 只展示自己可用的命令。
 
-私聊群组名使用 `3333.admin`、`3333.ddl`、`3333.summary`；群内使用 `group.admin`、`group.ddl`、`group.summary`，只指本群。群内拒绝数字群号编码，不能查询或编辑其他群身份组，即使是 Super。全局组在两处都用 `admin` 等原名。
+| 用法 | 作用 |
+| --- | --- |
+| `/help`、`/role` | 查看帮助、自己的身份组 |
+| `/ddl add 明天18点交物理作业，提前3小时提醒` | 让 AI 创建一条 DDL |
+| `/ddl list`、`/ddl view` | 查看详细列表、时间卡片 |
+| `/ddl show 3`、`/ddl remove 3` | 查看或取消编号为3的 DDL 通知 |
+| `/summary text 内容` | 总结文字 |
+| `/announce-reject on` | 拒收广播；`off` 恢复，不影响 DDL 提醒 |
 
-GROUP 的 list 只列本群当前成员，不展示其他群身份；CHAT 的 list 可合并全局和各群身份，带昵称、群名与 ID。筛选按有效权限匹配，标明直接授权与继承。群成员查询失败不会扩大名单范围。
+有 `autoanalysis` 权限时，可以直接私聊发送文字、引用或合并聊天记录来添加个人 DDL；修改任务时明确编号和要求，例如“把 DDL #3 的标题改成提交物理作业”。取消请使用 `/ddl remove 编号`。
 
-普通用户私聊 `/role` 也会逐群列出自己拥有的全部群身份组、对应群名/群号及私聊编码，不需要 Super；包括直接授权、继承和全员 group.admin 模式产生的权限。全员模式必须核实自己确实在该群，不把所有配置群的权限误算给用户；只查看本人，不展示其他人的授权名单。
+Super 使用 `/super help` 管理身份组、各用户和各群的 DDL、好友申请与群申请、费用、广播和只读群。
 
-`clear QQ`：私聊清除该用户的可编辑全局组及各群直接组；群内仅清除其全局组和本群直接组，不影响其他群、Super 配置、继承规则或群开关。
+## 详细文档
 
-`reset` 一次清空目标群全部 `group.admin`、`group.ddl`、`group.summary` 的直接持有者，不改任何全局组、其他群、既有 DDL 或全员模式。若当前全员模式为 on，重置后仍人人有效拥有 group.admin，回复会说明并给出关闭命令。`group-admin on/off` 不删除直接名单；on 同时继承 group.ddl 和 group.summary，off 恢复原名单及继承。群内两个命令均只能作用于本群，不接受另填群号。
+- [普通命令与 DDL](docs/commands.md)：创建、提醒规则、自动分析、总结。
+- [Super 管理](docs/super.md)：批量身份组、跨会话 DDL、申请审批与其他管理命令。
+- [配置与升级](docs/configuration.md)：配置项、存储、日志和运行约定。
+- [开发与打包](docs/development.md)：代码结构、本地检查与 ZIP 构建。
 
-```text
-私聊：
-/role add 123456789 autoanalysis
-/role add 223456789 3333.ddl
-/role list 3333.admin
-/role reset 3333
-/role group-admin on 3333
-
-群内：
-@机器人 /role
-@机器人 /role add 223456789 group.summary
-@机器人 /role list group.ddl
-@机器人 /role reset
-@机器人 /role group-admin off
-```
-
-旧 `/admin`、`/groupadmin`、`/ddl-admin` 和 `/role show` 不注册、不保留兼容别名。未知群消息继续交给其他 AstrBot 功能；未知斜杠命令不回退到自动分析。
-
-### DDL
-
-| 命令 | CHAT | GROUP |
-| --- | --- | --- |
-| `/ddl add 内容` | ddl，创建个人任务 | admin 或 group.ddl，AI 判断任务和通知对象 |
-| `/ddl add-strict "名称" [YYYY-MM-DD HH:mm] [-30min,-3h][;@成员]` | ddl，只通知本人 | admin 或 group.ddl，结构化创建 |
-| `/ddl defaulttime ["提示词"]` | ddl，查看/设置自动识别默认提醒；`""` 恢复系统默认 | 不可用 |
-| `/ddl list [页码]`、`/ddl show ID` | 仅本人个人空间 | 本群成员可看 |
-| `/ddl remove ID` | 仅本人 | 设置者取消全部；被通知者仅退出自己 |
-| `/ddl clear [this]` | ddl，清除自己的任务 | admin 或 group.admin，清除本群 |
-| `/ddl clear GROUP` | admin | admin 可跨群；group.admin 仅本群 |
-| `/ddl clear all` | admin | admin，当前机器人连接下全部群 |
-
-`clear all` 始终只清除群任务，不涉及任何人的个人任务。清除后在每个有任务被移除的群真实 @全部被通知者（分批，不使用 @全体）说明通知已移除；Readonly 拦截该通知。个人任务清除只私聊回复本人。
-
-ID 按平台、机器人、CHAT/GROUP、会话独立编号，不能跨会话引用。撤销身份组后仍可查看、取消自己已有的个人任务，或退出自己在群里的通知。
-
-### 私聊自动分析
-
-有效 autoanalysis（含继承）的用户，将普通文字、引用、合并转发或嵌套聊天记录私发给机器人，即可自动提取一次性 DDL。非命令事件才进入此功能；不会执行转发记录中的命令。Super/admin 默认因继承可用，可在 `autoanalysis_disabled_users` 关闭自己的自动分析。
-
-每包新增和修改合计最多10个任务，重复项不计入；只操作真实提交者的个人空间并通知本人，不向源群或原作者发送。有效项一起事务提交，时间不明、周期重复等业务拒绝项分别说明；整包操作超量或模型格式错误时不写入。截止已经过去的新 DDL 静默忽略，不影响其余有效项；没有任务或 AI 回复时反馈“未发现可添加的未过期 DDL。”，不通知 Super。
-
-每次自动分析向模型提供当前平台、机器人下本人个人空间的全部有效 DDL（含编号、名称、截止时间和待发提醒时间），不包含其他用户或群任务。模型按“同一实际事项、同一截止时刻”标记重复；措辞或提前提醒不同不重新创建。程序验证编号和截止时间，并对同名同截止任务执行本地去重。重复项反馈“已跳过重复录入”及已有编号、详情，不修改原通知对象或提醒时间；手动创建的个人任务也参与自动分析对照。
-
-递归最多4层、500个节点、20次独立转发资源查询、50000字、20秒。优先使用已有转发正文，缺失时通过 `get_forward_msg` 展开嵌套记录；转发内部的 reply 元数据直接忽略，不获取原消息、不补猜其内容。普通顶层引用只读取已展开的正文，自动分析不会调用 `get_msg`。转发循环、超限、资源获取失败或不支持的嵌套格式均停止整包导入；忽略历史回复属于既定读取范围，不视为解析失败。图片/音频/文件只作类型占位，不下载、OCR 或抓取链接，也不把昵称、@号码或类型占位当任务证据。相对日期优先按可靠的原消息时间理解，没有源时间则用提交时间；过去日期不会擅自改到未来。
-
-同用户模型任务串行，全插件最多2个模型请求。自动分析排队最多每用户3包、全局20包。事件 ID、包摘要和任务签名防止重复注册；不会自动重试失败请求或重复付费调用。
-
-私聊使用 `/ddl defaulttime "提前2天中午12点、提前1小时提醒"` 设置自己的默认规则；不带参数查看，`/ddl defaulttime ""` 恢复系统默认。按平台、机器人及本人隔离，最多1000字，不调用 AI 保存，也不修改已有任务；仅在以后自动识别未指定提醒规则时使用。消息中的明确提醒规则优先，手动 `/ddl add` 和结构化模式保留原默认提前量。
-
-未设置或提示词无效时，AI 按“提前3天的白天中午和傍晚合适时间，提前1天的白天中午和傍晚合适时间，当前的中午傍晚等合适时间，提前6h，3h，30min，5min”安排。“当前”指截止当天，中午约12:00、傍晚约18:00；晚于截止的日间节点不加入，过去节点忽略，默认到期再通知一次。无效自定义规则回退并提示；默认方案仍不合规时程序以12:00/18:00及固定提前量兜底，不重复付费调用。每项最多20次（含到期），仍只支持一次性任务。
-
-自动分析可修改已有个人任务，例如直接私聊 `把DDL #3的提示方式修改为提前3小时和30分钟提醒`、`把DDL #3的名字改成项目报告`。必须明确编号和要改的字段；支持名称、截止、具体提醒时间和到期通知。模型必须引用用户本次直接文字中的修改原句，程序复查当前数据和所有者；转发、引用、默认提示词不能授权修改。只改名称保留所有提醒；改提醒方案替换待发节点，保留历史发送记录，不重发已发送/结果不确定的节点。要求不明确时 AI 可单独私聊询问，也可独立给本人发送一句回应；这些文本仍经过密钥检查，创建/修改结果由程序确认。
-
-### 总结及其他命令
-
-| 命令 | 位置与要求 | 行为 |
-| --- | --- | --- |
-| `/help [命令]` | any / ALL | 从统一命令表生成当前位置可用帮助 |
-| `/summary` 附带文字/引用/转发记录 | summary / CHAT | 只总结本次提交内容，支持嵌套记录 |
-| `/summary text 内容` | summary / CHAT | 总结本次文字 |
-| `/summary group GROUP` 或 `/summary GROUP` | summary / CHAT | 总结指定群最近可获取的最多100条；非 admin 必须仍在目标群 |
-| `/summary` | admin 或 group.summary / GROUP | 总结本群最近可获取的最多100条 |
-| `/summary GROUP` | admin / GROUP | 总结指定群，回到命令所在群 |
-| `/send GROUP 内容` | admin / ALL | 向指定群发送纯文本 |
-| `/readonly list` | admin / CHAT | 查看只读群 |
-| `/readonly add GROUP`、`/readonly remove GROUP` | super / CHAT | 编辑独立 Readonly 列表 |
-| `你好` | any / GROUP | 只在真实 @机器人且无其他正文时回复“好牛魔呢” |
-
-总结末行是 `（+xxxx tokens used)`，接口没有有效用量时显示“未知”。历史接口不能保证读取全部历史或 QQ 未读状态。模型与 OneBot 的完整错误仅私聊 Super；普通请求者得到简短错误；正常成功不额外通知 Super。
-
-## 发送与调度
-
-- 共享 OneBot 出站拦截覆盖群消息、转发、上传、快速回复，以及所有出站 QQ 内容的受保护 Key 检查；诊断和分段前完整文本也检查。发现密钥时不转发原文。
-- 本插件输出超过15行（包含空行）时，使用一条合并聊天记录；适用于命令回复、总结、DDL 详情和 Super 日志。先检查完整原文，再包装和分节点。需要真实 @提醒时，额外发送简短 @提示，详细正文放在合并记录中；Readonly 对两次发送分别检查。
-- Readonly 群的 DDL 命令静默忽略，不调用 AI、不创建；发送提醒和移除通知也静默跳过。其他群发送被阻止时通知 Super。Readonly 不禁止读群，也不禁止提交者的个人任务。
-- 调度每15秒领取具体通知时间；正常延迟最多60秒，重启、长时间离线或 Readonly 跳过的节点不补发。失败或发送结果不确定不自动重试。
-- 发送使用原平台和机器人账号，不能确认路由则记录失败并通知 Super，不选择任意连接。取消/清除与发送共用锁；已交给 QQ 的消息无法撤回。
-- 群任务发送前验证成员仍在群内；AI 调用前和写入前复查资格。清除会取消该范围内尚未完成的 AI 创建。
-
-## 代码结构与本次校验
-
-根目录 `main.py` 仅保留 AstrBot 必须的插件发现、事件装饰器和生命周期转发。实现和打包工具均在 `src/`：
-
-```text
-src/
-  domain/          事件与作用域、身份组继承、命令定义、时间规则、密钥与显示文本规则
-  application/     统一鉴权/分发、权限管理、DDL、自动分析、总结、调度和组装入口
-  infrastructure/  JSON/SQLite 存储、启动迁移、OneBot、Responses、消息树解析
-  presentation/    昵称/群名回退与 DDL 详情格式
-  adapters/        AstrBot 事件与生命周期适配
-  tooling/         安装包生成
-```
-
-领域层不依赖 AstrBot、网络或数据库。命令权限由同一份注册表驱动分发与帮助；Readonly 是独立外层策略。所有运行数据只写插件持久化目录。
-
-按要求跳过测试，不连接或运行真实 AstrBot，不发送 QQ 消息，也不调用模型。本次只做 Ruff、Python 语法及本地导入路径的静态检查、JSON/文档检查和 ZIP 完整性校验；尚未验证实际部署环境中的运行行为。
-
-构建命令：
-
-```sh
-python -m src.tooling.package
-```
+时间默认使用北京时间。各群和各用户的个人任务独立；Readonly 在身份组之外拦截，Super 也不能绕过。

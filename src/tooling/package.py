@@ -30,6 +30,9 @@ def main():
         if "tooling" not in path.parts
     ]
     names += ["assets/fonts/NotoSansSC.ttf", "assets/fonts/OFL.txt"]
+    names += [
+        str(path.relative_to(root)) for path in sorted((root / "docs").rglob("*.md"))
+    ]
     for name in names:
         if name.endswith(".py"):
             ast.parse((root / name).read_text(encoding="utf-8"), filename=name)

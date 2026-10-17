@@ -117,9 +117,11 @@ class DeadlineService:
                 )
         return await show_task(task, names, time.time())
 
-    async def send_view(self, ctx, gateway, names):
+    async def send_view(self, ctx, gateway, names, *, scope=None, require_member=True):
         self.check_writable(ctx)
-        if ctx.group:
+        scope = scope or ctx.scope
+        group = scope[3] if scope[2] == "GROUP" else ""
+        if ctx.group and require_member:
             members = await self.authorizer.require_member(
                 ctx.actor, ctx.group, gateway
             )
@@ -127,11 +129,11 @@ class DeadlineService:
         async with self.image_slots:
             async with self.data.lock:
                 now = time.time()
-                tasks = active_tasks(self.data.list(ctx.scope, now), now)
+                tasks = active_tasks(self.data.list(scope, now), now)
             for task in tasks[:MAX_CARDS]:
-                if ctx.group:
+                if group:
                     task["participant_label"] = await participant_labels(
-                        task, names, ctx.group
+                        task, names, group
                     )
             # Inspect complete strings before rasterization or truncation.
             labels = [
@@ -140,9 +142,9 @@ class DeadlineService:
             ]
             self.guard.secrets.check(labels)
             png = await asyncio.to_thread(
-                render_deadlines, tasks, now, group=bool(ctx.group)
+                render_deadlines, tasks, now, group=bool(group)
             )
-        if ctx.group:
+        if ctx.group and require_member:
             await self.authorizer.require_member(ctx.actor, ctx.group, gateway)
         self.check_writable(ctx)
         self.guard.secrets.check(labels)

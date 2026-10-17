@@ -9,9 +9,7 @@ SECTIONS = (
     "DDL · 私聊自动识别",
     "DDL · 通用规则",
     "聊天总结",
-    "用量与费用（Super）",
     "广播消息",
-    "身份组管理（Super）",
     "群发送与只读管理",
 )
 
@@ -25,12 +23,8 @@ def _section(spec):
         return "DDL · 查看与取消"
     if spec.name == "/summary":
         return "聊天总结"
-    if spec.name == "/cost":
-        return "用量与费用（Super）"
-    if spec.name in {"/announce", "/announce-reject"}:
+    if spec.name == "/announce-reject":
         return "广播消息"
-    if spec.name == "/role" and spec.subcommand:
-        return "身份组管理（Super）"
     if spec.name in {"/send", "/readonly"}:
         return "群发送与只读管理"
     return "基础与身份查询"
@@ -47,12 +41,6 @@ def _command_lines(spec, ctx, roles):
                 if ctx.group
                 else "查看本人全局及全部群身份组"
             )
-        elif spec.subcommand == "reset":
-            usage = "/role reset" + ("" if ctx.group else " 群号")
-            description = "清空目标群全部直接身份组，保留全局权限和全员模式"
-        elif spec.subcommand == "group-admin":
-            usage = "/role group-admin on|off" + ("" if ctx.group else " 群号")
-            description = "on：全员获得 group.admin；off：恢复名单校验"
     elif spec.name == "/ddl":
         if spec.subcommand == "add":
             description = "交给 AI 提取一条 DDL，正文最多200字"
@@ -108,6 +96,10 @@ def render_help(ctx, specs, roles, *, autoanalysis_enabled=False):
     lines.append(
         "分类查询：/help ddl、/help role、/help summary；具体用法：/help ddl add-strict。"
     )
+    if "super" in roles:
+        lines.append(
+            "Super 管理入口：/super help（身份组、跨会话 DDL、申请、费用、广播、只读群）。"
+        )
     for title, commands in grouped.items():
         if not commands:
             continue
@@ -135,18 +127,51 @@ def render_help(ctx, specs, roles, *, autoanalysis_enabled=False):
             lines.append(
                 "默认提示词仅影响之后自动识别的新任务，不影响 /ddl add 或已有任务。"
             )
-        elif title == "身份组管理（Super）":
-            lines.append("全局身份组：super、admin、autoanalysis、ddl、summary。")
-            lines.append(
-                "群身份组：group.admin、group.ddl、group.summary；群内仅可编辑本群。"
-                if ctx.group
-                else "群身份组写作：群号.admin、群号.ddl、群号.summary，例如 3333.ddl。"
-            )
-            lines.append("remove/clear 只移除直接授权；由其他身份组继承的权限仍保留。")
-        elif title == "用量与费用（Super）":
-            lines.append(
-                "不带参数查看全部；user 按发起请求的 QQ 筛选，group 按群筛选。"
-                "费用按请求当时配置的人民币/百万 tokens 单价保存，重启后保留。"
-            )
 
+    return "\n".join(lines)
+
+
+def render_super_help(ctx, specs):
+    if not specs:
+        raise BusinessError("没有可用的对应命令。")
+    categories = {
+        "role": "身份组",
+        "ddl": "DDL 管理",
+        "request": "申请审批",
+        "cost": "费用",
+        "announce": "广播",
+        "readonly": "只读群",
+    }
+    grouped = {}
+    for spec in specs:
+        if not spec.subcommand or spec.subcommand == "help":
+            continue
+        category = spec.subcommand.split()[0]
+        grouped.setdefault(category, []).append(spec.usage + "：" + spec.description)
+    lines = [
+        "KakoBot Super 管理",
+        "分类查询：/super help role、/super help ddl、/super help request。",
+    ]
+    if ctx.group:
+        lines.append("群内须真实 @机器人；群身份组和 DDL 仅限本群，跨会话管理请私聊。")
+    for category, commands in grouped.items():
+        lines += ["", "【" + categories[category] + "】", *commands]
+        if category == "role":
+            lines.append(
+                "QQ/身份组可用逗号批量指定。全局组：admin、autoanalysis、ddl、summary；super 仅由配置指定。"
+            )
+            lines.append(
+                "群内用 group.admin/group.ddl/group.summary；私聊用 群号.admin/ddl/summary。set/clear 必须指定范围。继承权限不能直接移除。"
+            )
+        elif category == "ddl":
+            lines.append(
+                "对象：user:QQ、group:群号、this；任务写作 user:QQ#编号 或 group:群号#编号。编号只在所属会话内有效。"
+            )
+            lines.append(
+                "时间按北京时间；0 表示到期提醒。修改只调整未发节点，保留发送历史；每项最多20次通知。Readonly 不可绕过。"
+            )
+        elif category == "request":
+            lines.append(
+                "默认查看 pending；all 审批仅处理当前机器人 pending 申请。失败或结果不确定不自动重试；不会自动同意。"
+            )
     return "\n".join(lines)

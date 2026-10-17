@@ -16,7 +16,7 @@ class CostService:
         filters = {}
         if parts:
             if len(parts) != 2 or parts[0].lower() not in {"user", "group"}:
-                raise BusinessError("用法：/cost [user QQ号|group 群号]")
+                raise BusinessError("用法：" + action.spec.usage)
             filters["actor" if parts[0].lower() == "user" else "group"] = qq_id(
                 parts[1]
             )

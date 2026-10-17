@@ -3,12 +3,12 @@
 import logging
 from contextlib import nullcontext
 
-from ..domain.commands import CATALOG, resolve
+from ..domain.commands import CATALOG, LEGACY, resolve
 from ..domain.deadlines import DeadlineConfirmation
 from ..domain.errors import BusinessError, ModelError
 from ..domain.security import SecretViolation
 from ..infrastructure.onebot import ReadonlyViolation, deadline_context
-from ..presentation.help import render_help
+from ..presentation.help import render_help, render_super_help
 from ..presentation.names import NameDirectory
 
 logger = logging.getLogger("astrbot")
@@ -27,6 +27,9 @@ class Dispatcher:
         analysis,
         costs,
         announcements,
+        super_roles,
+        super_deadlines,
+        requests,
     ):
         self.roles, self.readonly, self.guard, self.authorizer = (
             roles,
@@ -42,20 +45,31 @@ class Dispatcher:
         )
         self.costs = costs
         self.announcements = announcements
+        self.super_roles, self.super_deadlines, self.requests = (
+            super_roles,
+            super_deadlines,
+            requests,
+        )
 
     def should_handle(self, ctx):
         if ctx.actor == ctx.bot or (ctx.group and not ctx.mentioned_bot):
             return False
         command = ctx.command
         if command:
-            return command[0] in {spec.name for spec in CATALOG}
+            return command[0] in {spec.name for spec in CATALOG} | {
+                name for name, _ in LEGACY
+            }
         return not ctx.text.lstrip().startswith("/") and self.analysis.enabled(ctx)
 
     async def handle(self, ctx, gateway):
         if not self.should_handle(ctx):
             return
         command = ctx.command
-        is_ddl = command is None or command[0] == "/ddl"
+        is_ddl = (
+            command is None
+            or command[0] == "/ddl"
+            or (command[0] == "/super" and command[1].split()[:1] == ["ddl"])
+        )
         with deadline_context() if is_ddl else nullcontext():
             try:
                 if ctx.group in self.readonly.readonly_groups:
@@ -74,6 +88,12 @@ class Dispatcher:
                         ctx, gateway, names, on_submitted
                     )
                 else:
+                    if command[0] == "/super" and "super" not in self.roles.effective(
+                        ctx.actor
+                    ):
+                        raise BusinessError(
+                            "此命令在当前位置不可用，或你没有所需的身份组。"
+                        )
                     spec, args = resolve(*command)
                     if spec is None:
                         raise BusinessError("未知子命令，请使用 /help 查看语法。")
@@ -120,6 +140,14 @@ class Dispatcher:
         handler = action.spec.handler
         if handler == "roles":
             return await self.role_service.handle(action, names)
+        if handler == "super_roles":
+            return await self.super_roles.handle(action, names)
+        if handler == "super_deadlines":
+            return await self.super_deadlines.handle(action, gateway, names)
+        if handler == "requests":
+            return await self.requests.handle(action, gateway, names)
+        if handler == "super_help":
+            return self.super_help(action.context, action.arguments)
         if handler == "deadlines":
             return await self.deadlines.handle(action, gateway, names, on_submitted)
         if handler == "summary":
@@ -132,7 +160,8 @@ class Dispatcher:
             return await self.announcements.handle(action, gateway)
         if handler == "readonly":
             parts = action.arguments.split()
-            if action.spec.subcommand == "list":
+            sub = action.spec.subcommand.split()[-1]
+            if sub == "list":
                 if parts:
                     raise BusinessError("用法：/readonly list")
                 return "Readonly 群：\n" + (
@@ -149,7 +178,22 @@ class Dispatcher:
             from ..domain.context import qq_id
 
             group = qq_id(parts[0])
-            self.readonly.set(group, action.spec.subcommand == "add")
+            before = sorted(self.readonly.readonly_groups, key=int)
+            after = sorted(
+                (self.readonly.readonly_groups | {group})
+                if sub == "add"
+                else (self.readonly.readonly_groups - {group}),
+                key=int,
+            )
+            ticket = self.super_roles.audit.prepare(
+                action.context, "readonly " + sub, before, after
+            )
+            try:
+                self.readonly.set(group, sub == "add")
+            except Exception:
+                self.super_roles.audit.finish(ticket, "uncertain")
+                raise
+            self.super_roles.audit.finish(ticket)
             return "已更新 Readonly：" + await names.group(group)
         if handler == "send":
             await gateway.send(
@@ -163,10 +207,13 @@ class Dispatcher:
     def help(self, ctx, query):
         roles = self.authorizer.effective(ctx)
         query = query.strip().removeprefix("/")
+        if query == "super" or query.startswith("super "):
+            return self.super_help(ctx, query[5:].strip())
         matches = [
             spec
             for spec in CATALOG
-            if spec.allowed(ctx.location, roles)
+            if spec.name != "/super"
+            and spec.allowed(ctx.location, roles)
             and (
                 not query
                 or (spec.name + " " + spec.subcommand).strip().removeprefix("/")
@@ -180,6 +227,24 @@ class Dispatcher:
             roles,
             autoanalysis_enabled=self.analysis.enabled(ctx),
         )
+
+    def super_help(self, ctx, query):
+        roles = self.authorizer.effective(ctx)
+        if "super" not in roles:
+            raise BusinessError("没有可用的对应命令。")
+        query = " ".join(query.lower().strip().split())
+        specs = [
+            spec
+            for spec in CATALOG
+            if spec.name == "/super"
+            and spec.allowed(ctx.location, roles)
+            and (
+                not query
+                or spec.subcommand == query
+                or spec.subcommand.startswith(query + " ")
+            )
+        ]
+        return render_super_help(ctx, specs)
 
     async def reply(self, ctx, gateway, text):
         self.guard.secrets.check(text)

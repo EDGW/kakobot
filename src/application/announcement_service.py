@@ -29,7 +29,7 @@ class AnnouncementService:
         if arguments:
             parts = arguments.split(maxsplit=1)
             if len(parts) != 2 or parts[0].lower() != "text" or not parts[1].strip():
-                raise BusinessError("用法：/announce 或 /announce text 广播内容")
+                raise BusinessError("用法：" + action.spec.usage)
             content = parts[1].strip()
         else:
             content = VERSION_ANNOUNCEMENT

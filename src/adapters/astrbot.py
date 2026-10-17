@@ -130,6 +130,7 @@ class AstrBotAdapter:
         self.context = context
         self.runtime = None
         self.routes = {}
+        self.request_hooks = []
         self.config = config
         self.directory = Path(StarTools.get_data_dir("astrbot_plugin_kakobot"))
 
@@ -195,7 +196,33 @@ class AstrBotAdapter:
     def install_guards(self):
         if self.runtime:
             for platform in self.platforms():
-                self.runtime.guard.install(platform.get_client())
+                client = platform.get_client()
+                self.runtime.guard.install(client)
+                if not any(bot is client for bot, _ in self.request_hooks):
+                    self.install_requests(platform, client)
+
+    def install_requests(self, platform, client):
+        platform_id = self.platform_id(platform)
+
+        async def receive(raw):
+            if not self.runtime or self.runtime.closing:
+                return
+            try:
+                from ..domain.context import qq_id
+
+                bot = qq_id(raw.get("self_id"))
+                self.routes[(platform_id, bot)] = client
+                await self.runtime.handle_request(
+                    platform_id, raw, OneBotGateway(client, bot, platform_id)
+                )
+            except Exception as exc:
+                logger.error("KakoBot 申请接入失败（%s）", type(exc).__name__)
+                await self.runtime.guard.report_error(
+                    client, str(raw.get("self_id") or ""), "申请接入", exc
+                )
+
+        client.subscribe("request", receive)
+        self.request_hooks.append((client, receive))
 
     def resolve_gateway(self, platform_id, bot_id):
         matches = [
@@ -263,6 +290,10 @@ class AstrBotAdapter:
                 )
 
     async def _handle_message(self, event):
+        raw = getattr(event.message_obj, "raw_message", None)
+        if isinstance(raw, dict) and raw.get("post_type", "message") != "message":
+            # Request events are handled by the raw OneBot hook, never as AI input.
+            return
         self.runtime.guard.install(event.bot)
         matches = [
             platform
@@ -281,5 +312,8 @@ class AstrBotAdapter:
         await self.runtime.handle(ctx, OneBotGateway(event.bot, ctx.bot, platform_id))
 
     async def terminate(self):
+        for client, handler in self.request_hooks:
+            client.unsubscribe("request", handler)
+        self.request_hooks.clear()
         if self.runtime:
             await self.runtime.close()

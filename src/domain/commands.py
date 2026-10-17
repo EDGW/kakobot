@@ -61,60 +61,6 @@ CATALOG = (
         "查看本人全局组；私聊列全部群组，群内仅本群",
     ),
     CommandSpec(
-        "/role",
-        "list",
-        ALL_SUPER,
-        "ROLE_SCOPE",
-        "roles",
-        "/role list [ROLE]",
-        "列出范围内身份组成员及继承来源",
-    ),
-    CommandSpec(
-        "/role",
-        "add",
-        ALL_SUPER,
-        "ROLE_SCOPE",
-        "roles",
-        "/role add QQ ROLE",
-        "添加直接身份组",
-    ),
-    CommandSpec(
-        "/role",
-        "remove",
-        ALL_SUPER,
-        "ROLE_SCOPE",
-        "roles",
-        "/role remove QQ ROLE",
-        "移除直接身份组，继承权限保留",
-    ),
-    CommandSpec(
-        "/role",
-        "clear",
-        ALL_SUPER,
-        "ROLE_SCOPE",
-        "roles",
-        "/role clear QQ [ROLE]",
-        "清除指定用户范围内的直接身份组",
-    ),
-    CommandSpec(
-        "/role",
-        "reset",
-        ALL_SUPER,
-        "ROLE_GROUP",
-        "roles",
-        "/role reset [GROUP]",
-        "清空本群全部直接身份组；私聊须指定群号，不改全局组和全员模式",
-    ),
-    CommandSpec(
-        "/role",
-        "group-admin",
-        ALL_SUPER,
-        "ROLE_GROUP",
-        "roles",
-        "/role group-admin on|off [GROUP]",
-        "on启用全员group.admin，off恢复名单校验；私聊须指定群号",
-    ),
-    CommandSpec(
         "/readonly",
         "list",
         {"CHAT": ADMIN},
@@ -122,24 +68,6 @@ CATALOG = (
         "readonly",
         "/readonly list",
         "查看 Readonly 群",
-    ),
-    CommandSpec(
-        "/readonly",
-        "add",
-        {"CHAT": SUPER},
-        "CURRENT",
-        "readonly",
-        "/readonly add GROUP",
-        "设置群只读，停止群发送",
-    ),
-    CommandSpec(
-        "/readonly",
-        "remove",
-        {"CHAT": SUPER},
-        "CURRENT",
-        "readonly",
-        "/readonly remove GROUP",
-        "解除群只读，不补发旧提醒",
     ),
     CommandSpec(
         "/ddl",
@@ -226,15 +154,6 @@ CATALOG = (
         "MESSAGE_TREE",
     ),
     CommandSpec(
-        "/announce",
-        "",
-        ALL_SUPER,
-        "CURRENT",
-        "announce",
-        "/announce [text 广播内容]",
-        "向有私聊记录、有 autoanalysis 权限且未拒收的用户广播；默认发送本版本使用提示",
-    ),
-    CommandSpec(
         "/announce-reject",
         "",
         ALL_ANY,
@@ -242,15 +161,6 @@ CATALOG = (
         "announce_reject",
         "/announce-reject on|off",
         "on 拒收全部广播，off 恢复接收；不影响 DDL 提醒",
-    ),
-    CommandSpec(
-        "/cost",
-        "",
-        ALL_SUPER,
-        "CURRENT",
-        "cost",
-        "/cost [user QQ号|group 群号]",
-        "按账号和群查询近1/3/7/30天及累计 tokens、人民币费用，仅统计当前机器人",
     ),
     CommandSpec(
         "/send",
@@ -271,15 +181,217 @@ CATALOG = (
         "真实@机器人且没有其他正文时问候",
     ),
 )
-SUBCOMMANDS = {"/role", "/readonly", "/ddl"}
+# Compatibility aliases are hidden from help for one transition version.
+LEGACY = {
+    ("/role", sub) for sub in ("list", "add", "remove", "clear", "reset", "group-admin")
+}
+LEGACY |= {
+    ("/cost", ""),
+    ("/announce", ""),
+    ("/readonly", "add"),
+    ("/readonly", "remove"),
+}
+
+
+def management_specs():
+    entries = [
+        ("", "super_help", "/super", "Super 管理帮助"),
+        (
+            "help",
+            "super_help",
+            "/super help [role|ddl|request|cost|announce|readonly]",
+            "分类查看管理帮助",
+        ),
+        (
+            "role show",
+            "super_roles",
+            "/super role show QQ[,QQ] [--page 页码]",
+            "查询指定用户的直接及有效权限",
+        ),
+        (
+            "role list",
+            "super_roles",
+            "/super role list [ROLE] [--group 群号] [--source direct|inherited|everyone] [--page 页码]",
+            "按身份组、群和来源筛选成员",
+        ),
+        (
+            "role add",
+            "super_roles",
+            "/super role add QQ[,QQ] ROLE[,ROLE] [--dry-run]",
+            "批量添加直接授权",
+        ),
+        (
+            "role remove",
+            "super_roles",
+            "/super role remove QQ[,QQ] ROLE[,ROLE] [--dry-run]",
+            "批量移除直接授权，保留继承权限",
+        ),
+        (
+            "role set",
+            "super_roles",
+            "/super role set QQ[,QQ] ROLE[,ROLE] --scope global|group:群号 [--dry-run]",
+            "替换指定范围的直接授权",
+        ),
+        (
+            "role clear",
+            "super_roles",
+            "/super role clear QQ[,QQ] --scope global|group:群号|all [--dry-run]",
+            "批量清除指定范围直接授权",
+        ),
+        (
+            "role reset",
+            "super_roles",
+            "/super role reset [群号[,群号]] [--roles group.ddl,group.summary] [--dry-run]",
+            "清空群的全部或指定直接身份组名单",
+        ),
+        (
+            "role group-admin",
+            "super_roles",
+            "/super role group-admin on|off [群号[,群号]] [--dry-run]",
+            "开关全员 group.admin 模式，保留直接名单",
+        ),
+        (
+            "ddl list",
+            "super_deadlines",
+            "/super ddl list [this|user:QQ|group:群号|all] [--creator QQ] [--target QQ] [--status active|expired|cancelled|all] [--from 时间] [--to 时间] [--page 页码]",
+            "筛选各对象的 DDL，编号带会话标识",
+        ),
+        (
+            "ddl show",
+            "super_deadlines",
+            "/super ddl show 对象#编号",
+            "查看任务详情与历史通知状态",
+        ),
+        (
+            "ddl view",
+            "super_deadlines",
+            "/super ddl view [this|user:QQ|group:群号]",
+            "将目标会话的 DDL 图片回给 Super",
+        ),
+        (
+            "ddl edit",
+            "super_deadlines",
+            '/super ddl edit 对象#编号[,对象#编号] [--title "名称"] [--due "YYYY-MM-DD HH:mm"] [--remind=-3h,-30min,0] [--targets QQ,QQ|--targets-add QQ,QQ|--targets-remove QQ,QQ] [--dry-run]',
+            "批量修改有效任务，直接解析参数，不调用 AI",
+        ),
+        (
+            "ddl remove",
+            "super_deadlines",
+            "/super ddl remove 对象#编号[,对象#编号] [--dry-run]",
+            "批量取消整条任务并保留历史",
+        ),
+        (
+            "ddl clear",
+            "super_deadlines",
+            "/super ddl clear this|user:QQ|group:群号 [--dry-run]",
+            "清除明确会话内的全部有效任务",
+        ),
+        (
+            "request list",
+            "requests",
+            "/super request list [pending|approved|denied|failed|uncertain|all] [--page 页码]",
+            "列出当前机器人收到的好友申请、加群申请及邀请",
+        ),
+        (
+            "request approve",
+            "requests",
+            "/super request approve 编号[,编号]|all",
+            "同意指定待处理申请；all 仅处理 pending",
+        ),
+        (
+            "request deny",
+            "requests",
+            "/super request deny 编号[,编号]|all",
+            "拒绝指定待处理申请；all 仅处理 pending",
+        ),
+    ]
+    for sub, handler, usage, description in entries:
+        yield CommandSpec(
+            "/super", sub, ALL_SUPER, "SUPER", handler, usage, description
+        )
+    for sub, handler, usage, description, requirements in (
+        (
+            "cost",
+            "cost",
+            "/super cost [user QQ号|group 群号]",
+            "近1/3/7/30天及累计 tokens 和人民币费用",
+            ALL_SUPER,
+        ),
+        (
+            "announce",
+            "announce",
+            "/super announce [text 广播内容]",
+            "向有私聊记录、autoanalysis 权限且未拒收的人广播",
+            ALL_SUPER,
+        ),
+        (
+            "readonly list",
+            "readonly",
+            "/super readonly list",
+            "查看独立只读群名单",
+            {"CHAT": SUPER},
+        ),
+        (
+            "readonly add",
+            "readonly",
+            "/super readonly add 群号",
+            "设为只读群，阻止发送",
+            {"CHAT": SUPER},
+        ),
+        (
+            "readonly remove",
+            "readonly",
+            "/super readonly remove 群号",
+            "解除只读，不补发旧提醒",
+            {"CHAT": SUPER},
+        ),
+    ):
+        yield CommandSpec(
+            "/super", sub, requirements, "CURRENT", handler, usage, description
+        )
+
+
+CATALOG += tuple(management_specs())
 
 
 def resolve(name, arguments):
-    sub = ""
-    if name in SUBCOMMANDS:
+    if name == "/role" and arguments.strip():
         parts = arguments.split(maxsplit=1)
-        sub = parts[0].lower() if parts else ""
-        arguments = parts[1] if len(parts) > 1 else ""
-    return next(
-        (spec for spec in CATALOG if spec.name == name and spec.subcommand == sub), None
-    ), arguments
+        if (name, parts[0].lower()) in LEGACY:
+            sub, tail = parts[0].lower(), parts[1] if len(parts) > 1 else ""
+            # Preserve the old clear QQ [ROLE] meaning for this transition version.
+            if sub == "clear":
+                values = tail.split()
+                if len(values) == 2:
+                    sub = "remove"
+                elif len(values) == 1:
+                    tail += " --scope legacy"
+            return resolve("/super", "role " + sub + " " + tail)
+    if name in {"/cost", "/announce"}:
+        return resolve("/super", name[1:] + " " + arguments)
+    if name == "/readonly":
+        first = arguments.split(maxsplit=1)
+        if first and (name, first[0].lower()) in LEGACY:
+            return resolve("/super", "readonly " + arguments)
+    candidates = []
+    for spec in CATALOG:
+        if spec.name != name:
+            continue
+        words = spec.subcommand.split()
+        pieces = arguments.split(maxsplit=len(words)) if words else []
+        if words and [part.lower() for part in pieces[: len(words)]] != words:
+            continue
+        if not words and name in {"/ddl", "/readonly", "/super"} and arguments.strip():
+            continue
+        tail = (
+            pieces[len(words)]
+            if words and len(pieces) > len(words)
+            else ""
+            if words
+            else arguments
+        )
+        candidates.append((len(words), spec, tail))
+    if not candidates:
+        return None, arguments
+    _, spec, tail = max(candidates, key=lambda item: item[0])
+    return spec, tail

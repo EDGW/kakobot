@@ -13,7 +13,7 @@ from .preferences import PreferenceStore
 from .readonly import ReadonlyPolicy
 from .roles import RoleStore, empty_roles, validate_roles
 
-VERSION = "1.2.2"
+VERSION = "1.3.0"
 
 
 @contextmanager
@@ -183,7 +183,16 @@ def migrate(directory: Path):
         ):
             raise ValueError("version.json 格式错误，停止启动。")
         version = data["version"]
-        if version in {VERSION, "1.0.0", "1.0.1", "1.0.2", "1.1.0", "1.2.0", "1.2.1"}:
+        if version in {
+            VERSION,
+            "1.0.0",
+            "1.0.1",
+            "1.0.2",
+            "1.1.0",
+            "1.2.0",
+            "1.2.1",
+            "1.2.2",
+        }:
             _validate(directory)
             if version != VERSION:
                 # Compatible patches keep the existing schema and all data.

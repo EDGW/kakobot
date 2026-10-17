@@ -5,6 +5,7 @@ import time
 
 import httpx
 
+from ..infrastructure.audit import AuditStore
 from ..infrastructure.conversations import ConversationStore
 from ..infrastructure.deadlines import DeadlineStore
 from ..infrastructure.migration import migrate
@@ -12,6 +13,7 @@ from ..infrastructure.model import ModelClient
 from ..infrastructure.onebot import OutboundGuard
 from ..infrastructure.preferences import PreferenceStore
 from ..infrastructure.readonly import ReadonlyPolicy
+from ..infrastructure.requests import RequestStore
 from ..infrastructure.roles import RoleStore
 from ..infrastructure.usage import UsageStore
 from .analysis import AutomaticAnalysis
@@ -21,10 +23,13 @@ from .cost_service import CostService
 from .deadline_service import DeadlineService
 from .dispatcher import Dispatcher
 from .extraction import Extractor
+from .request_service import RequestService
 from .role_service import RoleService
 from .scheduler import DeadlineScheduler
 from .sessions import UserSessions
 from .summary_service import SummaryService
+from .super_deadline_service import SuperDeadlineService
+from .super_role_service import SuperRoleService
 
 
 class Runtime:
@@ -41,6 +46,11 @@ class Runtime:
         self.data = DeadlineStore(directory / "deadlines.sqlite3", time.time())
         self.usage = UsageStore(directory / "usage.sqlite3", time.time())
         self.conversations = ConversationStore(directory / "conversations.sqlite3")
+        self.audit = AuditStore(directory / "management.sqlite3")
+        self.requests_data = RequestStore(directory / "requests.sqlite3")
+        self.requests = RequestService(
+            self.requests_data, self.roles, self.guard, self.audit
+        )
         self.conversations.seed_private(
             self.data.private_contacts() | preferences.owners()
         )
@@ -72,6 +82,9 @@ class Runtime:
             analysis,
             CostService(self.usage),
             AnnouncementService(self.roles, self.conversations, self.guard),
+            SuperRoleService(self.roles, self.audit, self.readonly),
+            SuperDeadlineService(deadlines, self.audit),
+            self.requests,
         )
         self.scheduler = DeadlineScheduler(
             deadlines, resolve_gateway, diagnostic_gateway
@@ -94,6 +107,16 @@ class Runtime:
         if not self.closing:
             self.conversations.observe(ctx)
 
+    async def handle_request(self, platform, raw, gateway):
+        if self.closing:
+            return
+        task = asyncio.current_task()
+        self.active.add(task)
+        try:
+            await self.requests.receive(platform, raw, gateway)
+        finally:
+            self.active.discard(task)
+
     async def close(self):
         self.closing = True
         await self.scheduler.stop()
@@ -105,4 +128,6 @@ class Runtime:
         self.data.close()
         self.usage.close()
         self.conversations.close()
+        self.audit.close()
+        self.requests_data.close()
         await self.http.aclose()

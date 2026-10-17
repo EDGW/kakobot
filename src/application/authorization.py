@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from ..domain.context import qq_id
 from ..domain.errors import BusinessError
-from ..domain.roles import parse_role
 
 
 @dataclass(frozen=True)
@@ -31,40 +30,8 @@ class Authorizer:
             raise BusinessError("此命令在当前位置不可用，或你没有所需的身份组。")
         resources = {}
         parts = arguments.split()
-        if spec.policy == "ROLE_SCOPE":
-            action = spec.subcommand
-            if not action and parts:
-                raise BusinessError(
-                    "用法：/role；管理请使用 list/add/remove/clear/reset/group-admin。"
-                )
-            if action == "list":
-                if len(parts) > 1:
-                    raise BusinessError("用法：/role list [ROLE]")
-                resources["role"] = parse_role(parts[0], ctx.group) if parts else None
-            if action in {"add", "remove", "clear"}:
-                if len(parts) not in ({1, 2} if action == "clear" else {2}):
-                    raise BusinessError("用法：" + spec.usage)
-                resources["user"] = qq_id(parts[0])
-                resources["role"] = (
-                    parse_role(parts[1], ctx.group) if len(parts) == 2 else None
-                )
-        if spec.policy == "ROLE_GROUP":
-            if spec.subcommand == "reset":
-                if len(parts) != (0 if ctx.group else 1):
-                    raise BusinessError("群内用 /role reset；私聊用 /role reset 群号。")
-                resources["group"] = ctx.group or qq_id(parts[0])
-            elif spec.subcommand == "group-admin":
-                if len(parts) != (1 if ctx.group else 2) or parts[0].lower() not in {
-                    "on",
-                    "off",
-                }:
-                    raise BusinessError(
-                        "群内用 /role group-admin on|off；私聊须在末尾加群号。"
-                    )
-                resources.update(
-                    group=ctx.group or qq_id(parts[1]),
-                    everyone_admin=parts[0].lower() == "on",
-                )
+        if spec.policy == "ROLE_SCOPE" and parts:
+            raise BusinessError("用法：/role")
         if spec.policy == "OWN_OR_MEMBER" and ctx.group:
             await self.require_member(ctx.actor, ctx.group, gateway)
         if spec.policy == "CLEAR_SCOPE":

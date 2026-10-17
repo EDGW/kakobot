@@ -1,14 +1,11 @@
 """Direct role assignments; effective membership is derived, never persisted."""
 
-import copy
 from pathlib import Path
 
 from ..domain.context import qq_id
-from ..domain.errors import BusinessError
 from ..domain.roles import (
     GLOBAL_ROLES,
     GROUP_ROLES,
-    RoleRef,
     expand_global,
     expand_group,
 )
@@ -128,68 +125,8 @@ class RoleStore:
     def groups(self) -> set[str]:
         return set(self.data["group_roles"]) | set(self.data["group_admin_enabled"])
 
-    def reset_group(self, group):
-        group = qq_id(group)
-        data = copy.deepcopy(self.data)
-        removed = data["group_roles"].pop(group, {})
-        users = {user for values in removed.values() for user in values}
-        grants = sum(len(values) for values in removed.values())
+    def replace(self, data):
+        """One atomic replacement for a fully validated management batch."""
         validate_roles(data)
         atomic_json(self.path, data)
         self.data = data
-        return len(users), grants
-
-    def set_group_admin_override(self, group, enabled):
-        group = qq_id(group)
-        if type(enabled) is not bool:
-            raise ValueError("全员 group.admin 模式必须为布尔值。")
-        data = copy.deepcopy(self.data)
-        # Retain the existing persisted meaning: False bypasses the role list.
-        data["group_admin_enabled"][group] = not enabled
-        validate_roles(data)
-        atomic_json(self.path, data)
-        self.data = data
-
-    def edit(
-        self, action: str, user: str, ref: RoleRef | None, current_group: str
-    ) -> list[str]:
-        user = qq_id(user)
-        if ref and ref.name == "super":
-            raise BusinessError("Super 仅由 super_user 配置，不能通过命令编辑。")
-        data = copy.deepcopy(self.data)
-        removed = []
-        if ref:
-            entries = (
-                data["group_roles"].setdefault(
-                    ref.group, {role: [] for role in GROUP_ROLES}
-                )
-                if ref.group
-                else data["global_roles"]
-            )
-            values = set(entries[ref.name])
-            if action == "add":
-                values.add(user)
-            elif user in values:
-                values.remove(user)
-                removed.append(ref.display("GROUP" if current_group else "CHAT"))
-            entries[ref.name] = sorted(values, key=int)
-        else:
-            for role, values in data["global_roles"].items():
-                if user in values:
-                    values.remove(user)
-                    removed.append(role)
-            for group, roles in data["group_roles"].items():
-                if current_group and group != current_group:
-                    continue
-                for role, values in roles.items():
-                    if user in values:
-                        values.remove(user)
-                        removed.append(
-                            RoleRef(role, group).display(
-                                "GROUP" if current_group else "CHAT"
-                            )
-                        )
-        validate_roles(data)
-        atomic_json(self.path, data)
-        self.data = data
-        return removed
