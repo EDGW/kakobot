@@ -1,0 +1,45 @@
+{
+  "super_user": {
+    "description": "唯一的 Super 用户 QQ 号",
+    "type": "string",
+    "default": "000000000",
+    "hint": "请改为自己的真实 QQ 号。Super 自动拥有 Admin 权限；默认占位值不会授予真实用户权限。"
+  },
+  "api_key": {
+    "description": "OpenAI 兼容 API Key",
+    "type": "string",
+    "default": "",
+    "hint": "用于 /summary、/ddl add 及私聊自动分析的模型认证。出站 QQ 消息含此密钥时整条拦截；不写入权限或DDL数据文件。"
+  },
+  "model_name": {
+    "description": "总结和DDL解析使用的模型名称",
+    "type": "string",
+    "default": ""
+  },
+  "reasoning_effort": {
+    "description": "模型思考强度 reasoning.effort",
+    "type": "string",
+    "default": "",
+    "hint": "留空不传此参数，使用模型默认值。可按模型支持填写 low、medium、high 等；不支持时 API 会返回错误并通知 Super。"
+  },
+  "api_address": {
+    "description": "OpenAI 兼容 API 地址",
+    "type": "string",
+    "default": "https://api.openai.com/v1",
+    "hint": "使用 Responses 聊天协议。填写以 /v1 结尾的 API 基础地址，或完整的 /responses 地址。旧版完整 /chat/completions 地址会自动换成 /responses。"
+  },
+  "enabled_analysis_tasks": {
+    "description": "启用的私聊自动分析任务类型",
+    "type": "list",
+    "default": [
+      "ddl"
+    ],
+    "hint": "当前支持 ddl。只有有效 autoanalysis 用户（含继承）可触发；清空列表可关闭全部自动分析。"
+  },
+  "autoanalysis_disabled_users": {
+    "description": "暂时关闭自动分析的 QQ 号列表",
+    "type": "list",
+    "default": [],
+    "hint": "列入后保留身份组及手动命令权限，但不处理其普通私聊。Super/Admin 也可在此关闭自己的自动分析。"
+  }
+}

@@ -1,0 +1,7 @@
+name: astrbot_plugin_kakobot
+display_name: KakoBot
+desc: '统一身份组与 CHAT/GROUP 命令、私聊 DDL 自动识别与明确修改、自定义默认提醒及群总结。'
+version: v1.1.0
+author: edgwu
+support_platforms:
+  - aiocqhttp
