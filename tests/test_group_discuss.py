@@ -262,6 +262,7 @@ async def test_budget_reservation_unknown_and_eviction(service):
     assert store.session(scope, a)["ended"] is not None
     turn = store.new_turn(b, "2")
     config = service.config(scope)
+    config["session_token_budget"] = 30000
     call = store.reserve(scope, b, turn, 29000, config, service.policy)
     with pytest.raises(BusinessError, match="会话预算"):
         store.reserve(scope, b, turn, 2000, config, service.policy)
@@ -375,6 +376,7 @@ async def test_context_summary_counts_toward_turn_usage(service):
 
     g = Gateway()
     scope = await enable(service, g)
+    service.store.save_group(scope, "1", config={"context_max_bytes": 6000})
     session = service.store.create_session(scope, "2", 5)
     history = []
     for i in range(3):
@@ -520,7 +522,7 @@ def test_upgrade_backup_and_prerelease_version(tmp_path):
     assert (tmp_path / "migration-backup-1.3.2" / "roles.json").is_file()
     assert (tmp_path / "migration-backup-1.3.2" / "deadlines.sqlite3").is_file()
     migrate(tmp_path)  # repeat is safe
-    assert ReleaseInfoStore().version() == "v2.0.0-beta.1.1"
+    assert ReleaseInfoStore().version() == f"v{VERSION}"
 
 
 @pytest.mark.asyncio
@@ -696,7 +698,8 @@ async def test_native_gates_and_independent_limit(service):
         service.store.tool_begin(identifier, "search_web", turn.config)
     # Native web actions do not consume unrelated DDL tool quota.
     assert (
-        service.store.tool_remaining(identifier, "query_group_data", turn.config) == 3
+        service.store.tool_remaining(identifier, "query_group_data", turn.config)
+        == turn.config["tools.query_group_data.max_calls_per_request"]
     )
 
 
@@ -1228,3 +1231,159 @@ async def test_legacy_policy_adds_docs_tool_preserving_overrides(service, tmp_pa
         )
     finally:
         migrated.store.close()
+
+
+@pytest.mark.asyncio
+async def test_limits_upgrade_persists_and_never_repeats(service, tmp_path):
+    from src.domain.group_discuss.config import LEGACY_DEFAULTS, LEGACY_MAXIMA
+
+    directory = tmp_path / "old-limits"
+    directory.mkdir()
+    atomic_json(directory / "roles.json", empty_roles())
+    old = system_defaults()
+    old["defaults"].update(LEGACY_DEFAULTS)
+    old["maxima"].update(LEGACY_MAXIMA)
+    for section in ("defaults", "maxima"):
+        old[section]["context_token_limit"] = old[section].pop("context_max_bytes")
+    old["tool_result_tokens"] = 3000
+    old.pop("tool_result_max_bytes")
+    old["global_daily_token_budget"] = 5000000
+    old["max_model_calls"] = 8
+    old["tool_enabled"]["search_web"] = False
+    atomic_json(directory / "group_discuss_policy.json", old)
+    store = DiscussStore(directory)
+    scope = scope_key(ctx(group="10"))
+    custom_scope = scope_key(ctx(group="11"))
+    store.save_group(
+        scope,
+        "1",
+        config={
+            "context_token_limit": 6000,
+            "session_token_budget": 30000,
+            "tools.search_web.enabled": False,
+        },
+        enabled=True,
+    )
+    store.save_group(
+        custom_scope,
+        "1",
+        config={
+            "context_token_limit": 9000,
+            "session_token_budget": 123456,
+        },
+    )
+    store.set_secret(scope, "1", "sk-preserve-secret")
+    session = store.create_session(scope, "2", 5)
+    turn = store.new_turn(session, "2")
+    call = store.reserve(
+        scope, session, turn, 100, system_defaults()["defaults"], system_defaults()
+    )
+    store.settle(call, (60, 20, 10), "completed")
+    with store.db:
+        store.db.execute("PRAGMA user_version=1")
+    store.close()
+
+    def start():
+        return DiscussService(
+            directory,
+            {"group_discuss": old},
+            RoleStore(directory / "roles.json", "1"),
+            service.guard,
+            service.http,
+            service.deadlines,
+        )
+
+    migrated = start()
+    try:
+        assert migrated.config(scope)["context_max_bytes"] == 65536
+        assert migrated.config(scope)["session_token_budget"] == 300000
+        assert migrated.config(custom_scope)["context_max_bytes"] == 9000
+        assert migrated.config(custom_scope)["session_token_budget"] == 123456
+        assert migrated.policy["maxima"]["context_max_bytes"] == 262144
+        assert migrated.policy["tool_result_max_bytes"] == 8192
+        assert migrated.policy["global_daily_token_budget"] == 50000000
+        assert migrated.policy["tool_enabled"]["search_web"] is False
+        assert migrated.store.secret(scope) == "sk-preserve-secret"
+        assert migrated.store.total("session=?", [session]) == 80
+        assert migrated.store.group(scope)["enabled"] is True
+        assert "context_token_limit" not in migrated.store.group(scope)["config"]
+        # Setting a new field back to an old default must survive every reboot.
+        migrated.store.save_group(scope, "1", config={"context_max_bytes": 6000})
+        await command(
+            migrated,
+            Gateway(),
+            "/super group-discuss limits set defaults.session_token_budget 30000",
+        )
+    finally:
+        migrated.store.close()
+    again = start()
+    try:
+        assert again.config(scope)["context_max_bytes"] == 6000
+        assert again.policy["defaults"]["session_token_budget"] == 30000
+        assert again.store.db.execute("PRAGMA user_version").fetchone()[0] == 2
+    finally:
+        again.store.close()
+
+
+@pytest.mark.asyncio
+async def test_large_tool_results_fit_new_byte_limit(service):
+    from src.application.group_discuss.harness import Turn, run_turn
+
+    g = Gateway()
+    scope = await enable(service, g)
+    await command(
+        service,
+        g,
+        "/group-discuss admin config set 10 tools.query_group_data.enabled true",
+        "2",
+    )
+    service.deadlines.list = lambda *args: [{"title": "西安市长安区天气" * 700}]
+    requests = []
+
+    async def handler(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        if len(requests) == 1:
+            output = [
+                {
+                    "type": "function_call",
+                    "id": f"fc{i}",
+                    "call_id": f"call{i}",
+                    "name": "query_group_data",
+                    "arguments": "{}",
+                }
+                for i in range(2)
+            ]
+        else:
+            output = answer("已整理查询结果")
+        return httpx.Response(200, json=response(output))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    session = service.store.create_session(scope, "2", 5)
+    identifier = service.store.new_turn(session, "2")
+    turn = Turn(service, ctx("2", "10"), g, scope, session, identifier)
+    assert await run_turn(turn, "查询今日天气") == "已整理查询结果"
+    assert len(requests) == 2
+    assert len(json.dumps(requests[-1]["input"], ensure_ascii=False).encode()) > 6000
+    assert service.store.turn_usage(identifier)["tools"] == 2
+
+
+def test_legacy_limits_preserve_custom_values_with_injected_schema_defaults():
+    from src.domain.group_discuss.config import input_size_bytes, upgrade_policy_limits
+
+    policy = system_defaults()
+    policy["defaults"]["context_token_limit"] = 9000
+    policy["maxima"]["context_token_limit"] = 19000
+    policy["tool_result_tokens"] = 1500
+    upgrade_policy_limits(policy)
+    validate_system(policy)
+    assert policy["defaults"]["context_max_bytes"] == 9000
+    assert policy["maxima"]["context_max_bytes"] == 19000
+    assert policy["tool_result_max_bytes"] == 1500
+    assert "context_token_limit" not in policy["defaults"]
+    assert "tool_result_tokens" not in policy
+    assert (
+        input_size_bytes("西安")
+        == len(json.dumps("西安", ensure_ascii=False).encode("utf-8")) + 256
+    )

@@ -13,6 +13,7 @@ from ...domain.group_discuss.config import (
     mask_key,
     parse_value,
     system_defaults,
+    upgrade_policy_limits,
     upgrade_tools_policy,
     validate_group,
     validate_system,
@@ -47,6 +48,12 @@ class DiscussService:
         deployed = copy.deepcopy(config.get("group_discuss", {}))
         deployed.pop("search_api_key", None)
         deployed.pop("search_provider", None)
+        migrated_policy = "tool_result_tokens" in deployed or any(
+            "context_token_limit" in deployed.get(section, {})
+            for section in ("defaults", "maxima")
+        )
+        if migrated_policy:
+            upgrade_policy_limits(deployed)
         self.policy.update(deployed)
         upgrade_tools_policy(self.policy)
         # Command changes are a durable override of the deployment defaults.
@@ -55,9 +62,16 @@ class DiscussService:
             saved = read_json(self.policy_path)
             saved.pop("search_api_key", None)
             saved.pop("search_provider", None)
+            if saved.pop("_limits_version", 1) < 2:
+                upgrade_policy_limits(saved)
+                migrated_policy = True
             self.policy.update(saved)
             upgrade_tools_policy(self.policy, fallback)
         validate_system(self.policy)
+        # Persist the completed migration so later reboots never re-upgrade edits.
+        if migrated_policy:
+            atomic_json(self.policy_path, {**self.policy, "_limits_version": 2})
+            self.policy_path.chmod(0o600)
         for row in self.store.db.execute("SELECT scope FROM secrets"):
             self.guard.secrets.register(self.store.secret(row[0]))
         self.global_waiting = 0
@@ -179,8 +193,6 @@ class DiscussService:
             raise BusinessError("当前思考强度已被系统停用。")
         if config["user_mode"] not in self.policy["allowed_user_modes"]:
             raise BusinessError("当前 user 模式已被系统停用。")
-        if config["summary_token_limit"] >= config["context_token_limit"]:
-            raise BusinessError("摘要上限必须小于上下文上限。")
 
     @staticmethod
     def command(ctx):
@@ -458,7 +470,7 @@ class DiscussService:
                 validate_system(policy)
                 self.authorize("", ctx.actor, 3)
                 self.policy = policy
-                persisted = copy.deepcopy(policy)
+                persisted = {**copy.deepcopy(policy), "_limits_version": 2}
                 atomic_json(self.policy_path, persisted)
                 self.policy_path.chmod(0o600)
                 self.store.apply_limits(policy)
@@ -583,8 +595,6 @@ class DiscussService:
                 else:
                     stored[key] = value
                 new = effective(stored, self.policy)
-                if new["summary_token_limit"] >= new["context_token_limit"]:
-                    raise BusinessError("摘要上限必须小于上下文上限。")
                 self.store.save_group(scope, ctx.actor, config=stored)
                 self.store.trim_sessions(scope, new["max_sessions"])
             return (

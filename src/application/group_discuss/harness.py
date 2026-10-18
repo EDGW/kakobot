@@ -19,7 +19,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import UsageLimits
 
 from ...domain.errors import BusinessError
-from ...domain.group_discuss.config import estimate_tokens
+from ...domain.group_discuss.config import input_size_bytes
 from ...infrastructure.group_discuss.docs import query_docs
 from ...infrastructure.group_discuss.tools import fetch_webpage, search_web
 
@@ -109,24 +109,28 @@ class MeteredResponsesModel(OpenAIResponsesModel):
             self._map_tool_definition(tool)
             for tool in model_request_parameters.function_tools
         ]
-        incoming = estimate_tokens(
+        incoming_bytes = input_size_bytes(
             [
                 material,
                 tool_schemas,
                 instructions if isinstance(instructions, str) else "",
             ]
         )
-        if incoming > turn.config["context_token_limit"]:
-            raise BusinessError("本轮必要上下文超过输入上限，请缩短问题或重新 @ 开始。")
+        if incoming_bytes > turn.config["context_max_bytes"]:
+            raise BusinessError(
+                f"本轮必要上下文 {incoming_bytes} bytes 超过输入字节上限 "
+                f"{turn.config['context_max_bytes']} bytes（context_max_bytes），请联系管理员调整。"
+            )
         outgoing = (model_settings or {}).get(
             "max_tokens", turn.config["max_output_tokens"]
         )
+        # UTF-8 bytes form a conservative input-token reservation, not billed usage.
         try:
             identifier = turn.service.store.reserve(
                 turn.scope,
                 turn.session,
                 turn.id,
-                incoming + outgoing,
+                incoming_bytes + outgoing,
                 turn.config,
                 turn.service.policy,
             )
@@ -258,8 +262,8 @@ class Turn:
             text = json.dumps(value, ensure_ascii=False, default=str)
             self.service.guard.secrets.check(text)
             budget = min(
-                self.service.policy["tool_result_tokens"],
-                self.config["context_token_limit"] // 3,
+                self.service.policy["tool_result_max_bytes"],
+                self.config["context_max_bytes"] // 3,
             )
             result = text.encode("utf-8")[:budget].decode("utf-8", errors="ignore")
             self.service.store.tool_finish(identifier, "completed")
@@ -339,10 +343,10 @@ async def run_turn(turn, prompt):
     recent = history[offset:]
     config = turn.config
     if (
-        estimate_tokens(
+        input_size_bytes(
             [summary, ModelMessagesTypeAdapter.dump_python(recent, mode="json"), prompt]
         )
-        > config["context_token_limit"] * 0.75
+        > config["context_max_bytes"] * 0.75
     ):
         starts = [
             i
@@ -364,7 +368,7 @@ async def run_turn(turn, prompt):
                 {"previous_summary": summary, "older_turns": old}, ensure_ascii=False
             )
             # Summary request is bounded; exact original records remain accessible by tool.
-            source_limit = max(0, config["context_token_limit"] - 1800)
+            source_limit = max(0, config["context_max_bytes"] - 1800)
             source = (
                 source.encode("utf-8")[-source_limit:].decode("utf-8", errors="ignore")
                 if source_limit

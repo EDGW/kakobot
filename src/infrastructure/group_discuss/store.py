@@ -10,7 +10,7 @@ from uuid import uuid4
 from cryptography.fernet import Fernet
 
 from ...domain.errors import BusinessError
-from ...domain.group_discuss.config import effective
+from ...domain.group_discuss.config import effective, upgrade_group_limits
 
 
 def scope_key(ctx, group=None):
@@ -36,7 +36,7 @@ class DiscussStore:
         os.chmod(path, 0o600)
         self.db.row_factory = sqlite3.Row
         try:
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (0, 1, 2):
                 raise ValueError("未知 discuss 数据库版本。")
             self.db.execute("PRAGMA journal_mode=WAL")
             with self.db:
@@ -76,8 +76,21 @@ class DiscussStore:
                         action TEXT NOT NULL, detail TEXT NOT NULL, created REAL NOT NULL);
                     CREATE TABLE IF NOT EXISTS secrets (
                         scope TEXT PRIMARY KEY, value BLOB NOT NULL);
-                    PRAGMA user_version=1;
                 """)
+                if self.db.execute("PRAGMA user_version").fetchone()[0] < 2:
+                    for row in self.db.execute(
+                        "SELECT scope,config FROM groups"
+                    ).fetchall():
+                        values = json.loads(row["config"])
+                        upgrade_group_limits(values)
+                        self.db.execute(
+                            "UPDATE groups SET config=? WHERE scope=?",
+                            (json.dumps(values), row["scope"]),
+                        )
+                    self.log(
+                        "system", "system", "limits migration", "v2: bytes/token units"
+                    )
+                    self.db.execute("PRAGMA user_version=2")
                 self.db.execute(
                     "UPDATE calls SET state='unknown' WHERE state='pending'"
                 )

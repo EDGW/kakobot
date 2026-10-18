@@ -36,12 +36,12 @@
 
 #### 第三步：按需调整预算、联网和提示词
 
-默认每个会话预算 30000 tokens，每群每日预算 200000 tokens，最多同时保留 5 个活跃会话。先保持默认即可；需要调整时：
+默认每个会话预算 300000 tokens，每群每日预算 2000000 tokens，最多同时保留 5 个活跃会话。先保持默认即可；需要调整时：
 
 ```text
 /group-discuss admin config set 123456 max_sessions 5
-/group-discuss admin config set 123456 session_token_budget 30000
-/group-discuss admin config set 123456 daily_token_budget 200000
+/group-discuss admin config set 123456 session_token_budget 300000
+/group-discuss admin config set 123456 daily_token_budget 2000000
 ```
 
 **群内默认只开启项目文档查询，联网和其他工具默认关闭。** 需要搜索和读取网页时再启用：
@@ -110,21 +110,21 @@
 | 设置项 | 群初始默认 | 系统初始上限 | 作用与达到限制后的行为 |
 | --- | --- | --- | --- |
 | `max_sessions` | 5 | 20 | 群内活跃会话上限；超过时按创建时间结束最早会话，降低配置立即淘汰超额会话 |
-| `session_token_budget` | 30000 | 200000 | 单会话累计输入加输出预算；不足以预留下一次调用时自动结束会话 |
-| `daily_token_budget` | 200000 | 2000000 | 本群每日输入加输出预算；耗尽后暂停调用，次日可继续未结束会话 |
-| `context_token_limit` | 6000 | 24000 | 单次模型请求的输入估算上限；历史接近上限时尝试摘要，必要输入仍超限时拒绝调用 |
-| `summary_token_limit` | 600 | 2000 | 历史摘要的最大输出 tokens；必须小于 context_token_limit，摘要消耗也记入预算 |
+| `session_token_budget` | 300000 | 2000000 | 单会话累计输入加输出预算；不足以预留下一次调用时自动结束会话 |
+| `daily_token_budget` | 2000000 | 20000000 | 本群每日输入加输出预算；耗尽后暂停调用，次日可继续未结束会话 |
+| `context_max_bytes` | 65536 | 262144 | 单次模型请求的 UTF-8 字节上限（含 JSON 序列化及 256 bytes 协议预留），不是 tokens；历史接近上限时尝试摘要，必要输入仍超限时拒绝调用 |
+| `summary_token_limit` | 1800 | 6000 | 历史摘要的最大输出 tokens；实际输出同时受 max_output_tokens 限制，摘要消耗也记入预算 |
 | `recent_turns` | 4 | 12 | 压缩时优先保留的最近完整轮次数；少数长轮次占满上下文时可进一步缩减保留范围 |
-| `max_output_tokens` | 2048 | 8192 | 每次正常回答模型请求的输出上限；同时约束摘要请求的输出，不代表整轮工具循环的输出总和 |
-| `max_tool_calls_per_request` | 5 | 12 | 一条用户请求内全部工具的累计次数，跨多次模型调用累计；内置搜索有供应商限次限制 |
+| `max_output_tokens` | 8192 | 32768 | 每次正常回答模型请求的输出上限；同时约束摘要请求的输出，不代表整轮工具循环的输出总和 |
+| `max_tool_calls_per_request` | 15 | 36 | 一条用户请求内全部工具的累计次数，跨多次模型调用累计；内置搜索有供应商限次限制 |
 
 “会话”是可由回复链多次延续的一段交流；“一条用户请求”是用户的一次发言及其全部内部模型、工具和摘要调用。压缩只缩短下一次发送的上下文，不结束会话，也不清零累计预算。
 
-每日按北京时间 00:00 切换。预算包含重复历史、缓存输入和摘要的输入/输出消耗；缓存命中是输入的子集，不重复累加。调用前先预留，收到 usage 后结算；缺失 usage 时保留预留，不能按零处理。token 预估采用保守字节估算，可能提前拒绝，实际账单以供应商为准。完整记账规则见 [预算与统计](statistics.md)。
+每日按北京时间 00:00 切换。预算包含重复历史、缓存输入和摘要的输入/输出消耗；缓存命中是输入的子集，不重复累加。调用前先预留，收到 usage 后结算；缺失 usage 时保留预留，不能按零处理。输入限制与裁剪使用 bytes；输出、摘要及累计预算使用 tokens。预留 token 预算仍以输入字节数作为保守上界，再加最大输出 tokens，可能提前拒绝；结算及实际账单以供应商 usage 为准。完整记账规则见 [预算与统计](statistics.md)。
 
 ## 群配置：每种工具的开关与限次
 
-五种工具分别具有两个独立设置项，下面列出全部十项。文档查询 query_docs 的群开关初始为 true，其他群开关为 false；单工具每请求次数初始为 3，系统初始上限为 8，允许设置为 0 以禁止该工具执行。
+五种工具分别具有两个独立设置项，下面列出全部十项。文档查询 query_docs 的群开关初始为 true，其他群开关为 false；单工具每请求次数初始为 9，系统初始上限为 24，允许设置为 0 以禁止该工具执行。
 
 | 工具 | 群开关设置项 | 单工具次数设置项 | 能力 |
 | --- | --- | --- | --- |
@@ -178,16 +178,16 @@
 
 | 设置项 | 初始值 | 作用 |
 | --- | --- | --- |
-| `global_daily_token_budget` | 5000000 tokens | 所有群合计的机器人每日模型预算；耗尽后暂停新调用，群 Key 各自结算费用 |
+| `global_daily_token_budget` | 50000000 tokens | 所有群合计的机器人每日模型预算；耗尽后暂停新调用，群 Key 各自结算费用 |
 | `request_timeout` | 180 秒 | 一条用户请求的整体执行超时，覆盖内部模型、工具和摘要处理 |
 | `model_timeout` | 90 秒 | 单次模型 HTTP 请求超时 |
-| `max_model_calls` | 8 次 | 一条用户请求最多提交的模型调用次数，包含摘要和工具循环 |
+| `max_model_calls` | 24 次 | 一条用户请求最多提交的模型调用次数，包含摘要和工具循环 |
 | `group_concurrency` | 2 | 单群最多同时处理的请求数 |
 | `global_concurrency` | 6 | 所有群合计最多同时处理的请求数 |
 | `group_queue_limit` | 10 | 单群等待队列容量；排队还需同时满足全局限制 |
 | `global_queue_limit` | 30 | 所有群合计等待队列容量 |
 | `tool_timeout` | 20 秒 | 单次工具执行超时 |
-| `tool_result_tokens` | 3000 | 单次工具结果的保守长度预算；当前按 UTF-8 字节裁剪，并取 context_token_limit 的三分之一与本值中较小者，不是实际计费 tokens |
+| `tool_result_max_bytes` | 8192 bytes | 单次工具结果正文上限；按 UTF-8 字节裁剪，并取 context_max_bytes 的三分之一与本值中较小者，不是实际计费 tokens |
 | `web_max_bytes` | 2097152 字节（2 MiB） | 独立 Search/Fetch 接口响应体大小上限；本机不直接下载目标网页 |
 | `web_max_redirects` | 3 | 旧版网页抓取保留项；当前 DeepSeek Search/Fetch 不使用该值，客户端不跟随工具接口重定向，目标网页跳转由 DeepSeek 服务处理 |
 | `history_retention_days` | 30 天 | 已结束会话正文的保留时间；启动时清理过期正文，用量账本继续保留 |
@@ -240,3 +240,9 @@ show 查看全部系统设置；set 修改指定项。默认模型白名单已�
 全局 limits 命令写入插件数据目录的 `group_discuss_policy.json`，优先于部署 config 中的同名设置；使用过命令覆盖后，再调整该项请继续使用 limits 命令，避免部署值被旧覆盖遮住。
 
 群凭据与历史使用 cryptography Fernet 加密，主密钥位于数据目录的 `group_discuss.key`；备份时同时保存主密钥和数据库。Key 不进入提示词、工具参数、统计或审计正文；不会回退使用总结或 DDL 功能的模型凭据。独立 search_api_key 已不再使用。
+
+## 旧配置自动升级
+
+启动识别到旧配置版本时，自动迁移群数据库和持久化系统策略。旧 context_token_limit 改为 context_max_bytes，旧 tool_result_tokens 改为 tool_result_max_bytes。新命令仅使用新字段名；summary_token_limit 仍为真实的输出 tokens。
+
+与旧默认值相同的额度升级到本页新默认值，非默认自定义额度保留原数值（旧输入限制原本就按 bytes 执行）。未单独设置的群项继续继承系统策略。升级不清空历史、用量、密钥或权限；迁移完成后记录版本，重启不重复提升管理员后来调整的额度。

@@ -70,22 +70,22 @@
           "session_token_budget": {
             "description": "session_token_budget",
             "type": "int",
-            "default": 30000
+            "default": 300000
           },
           "daily_token_budget": {
             "description": "daily_token_budget",
             "type": "int",
-            "default": 200000
+            "default": 2000000
           },
-          "context_token_limit": {
-            "description": "context_token_limit",
+          "context_max_bytes": {
+            "description": "单次模型输入上限（UTF-8 bytes，含协议预留）",
             "type": "int",
-            "default": 6000
+            "default": 65536
           },
           "summary_token_limit": {
             "description": "summary_token_limit",
             "type": "int",
-            "default": 600
+            "default": 1800
           },
           "recent_turns": {
             "description": "recent_turns",
@@ -95,12 +95,12 @@
           "max_output_tokens": {
             "description": "max_output_tokens",
             "type": "int",
-            "default": 2048
+            "default": 8192
           },
           "max_tool_calls_per_request": {
             "description": "max_tool_calls_per_request",
             "type": "int",
-            "default": 5
+            "default": 15
           },
           "user_mode": {
             "description": "user_mode",
@@ -125,7 +125,7 @@
           "tools.search_web.max_calls_per_request": {
             "description": "tools.search_web.max_calls_per_request",
             "type": "int",
-            "default": 3
+            "default": 9
           },
           "tools.fetch_webpage.enabled": {
             "description": "tools.fetch_webpage.enabled",
@@ -135,7 +135,7 @@
           "tools.fetch_webpage.max_calls_per_request": {
             "description": "tools.fetch_webpage.max_calls_per_request",
             "type": "int",
-            "default": 3
+            "default": 9
           },
           "tools.query_group_data.enabled": {
             "description": "tools.query_group_data.enabled",
@@ -145,7 +145,7 @@
           "tools.query_group_data.max_calls_per_request": {
             "description": "tools.query_group_data.max_calls_per_request",
             "type": "int",
-            "default": 3
+            "default": 9
           },
           "tools.read_session_history.enabled": {
             "description": "tools.read_session_history.enabled",
@@ -155,7 +155,7 @@
           "tools.read_session_history.max_calls_per_request": {
             "description": "tools.read_session_history.max_calls_per_request",
             "type": "int",
-            "default": 3
+            "default": 9
           },
           "system_prompt": {
             "description": "群默认系统提示词，群 admin 可覆盖",
@@ -170,7 +170,7 @@
           "tools.query_docs.max_calls_per_request": {
             "description": "项目文档每请求查询次数",
             "type": "int",
-            "default": 3
+            "default": 9
           }
         }
       },
@@ -186,22 +186,22 @@
           "session_token_budget": {
             "description": "session_token_budget",
             "type": "int",
-            "default": 200000
+            "default": 2000000
           },
           "daily_token_budget": {
             "description": "daily_token_budget",
             "type": "int",
-            "default": 2000000
+            "default": 20000000
           },
-          "context_token_limit": {
-            "description": "context_token_limit",
+          "context_max_bytes": {
+            "description": "群输入字节上限的系统最大值（bytes）",
             "type": "int",
-            "default": 24000
+            "default": 262144
           },
           "summary_token_limit": {
             "description": "summary_token_limit",
             "type": "int",
-            "default": 2000
+            "default": 6000
           },
           "recent_turns": {
             "description": "recent_turns",
@@ -211,37 +211,37 @@
           "max_output_tokens": {
             "description": "max_output_tokens",
             "type": "int",
-            "default": 8192
+            "default": 32768
           },
           "max_tool_calls_per_request": {
             "description": "max_tool_calls_per_request",
             "type": "int",
-            "default": 12
+            "default": 36
           },
           "tools.search_web.max_calls_per_request": {
             "description": "tools.search_web.max_calls_per_request",
             "type": "int",
-            "default": 8
+            "default": 24
           },
           "tools.fetch_webpage.max_calls_per_request": {
             "description": "tools.fetch_webpage.max_calls_per_request",
             "type": "int",
-            "default": 8
+            "default": 24
           },
           "tools.query_group_data.max_calls_per_request": {
             "description": "tools.query_group_data.max_calls_per_request",
             "type": "int",
-            "default": 8
+            "default": 24
           },
           "tools.read_session_history.max_calls_per_request": {
             "description": "tools.read_session_history.max_calls_per_request",
             "type": "int",
-            "default": 8
+            "default": 24
           },
           "tools.query_docs.max_calls_per_request": {
             "description": "项目文档查询次数全局上限",
             "type": "int",
-            "default": 8
+            "default": 24
           }
         }
       },
@@ -312,7 +312,7 @@
       "global_daily_token_budget": {
         "description": "global_daily_token_budget",
         "type": "int",
-        "default": 5000000
+        "default": 50000000
       },
       "request_timeout": {
         "description": "request_timeout",
@@ -327,7 +327,7 @@
       "max_model_calls": {
         "description": "max_model_calls",
         "type": "int",
-        "default": 8
+        "default": 24
       },
       "group_concurrency": {
         "description": "group_concurrency",
@@ -354,10 +354,10 @@
         "type": "int",
         "default": 20
       },
-      "tool_result_tokens": {
-        "description": "tool_result_tokens",
+      "tool_result_max_bytes": {
+        "description": "单次工具结果正文上限（UTF-8 bytes）",
         "type": "int",
-        "default": 3000
+        "default": 8192
       },
       "web_max_bytes": {
         "description": "web_max_bytes",

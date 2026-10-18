@@ -17,31 +17,31 @@ DEFAULT_SYSTEM_PROMPT = "符合社会价值观，不得识别或输出敏感内�
 DEFAULTS = {
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
     "max_sessions": 5,
-    "session_token_budget": 30000,
-    "daily_token_budget": 200000,
-    "context_token_limit": 6000,
-    "summary_token_limit": 600,
+    "session_token_budget": 300000,
+    "daily_token_budget": 2000000,
+    "context_max_bytes": 65536,
+    "summary_token_limit": 1800,
     "recent_turns": 4,
-    "max_output_tokens": 2048,
-    "max_tool_calls_per_request": 5,
+    "max_output_tokens": 8192,
+    "max_tool_calls_per_request": 15,
     "user_mode": "whitelist",
     "model_name": "",
     "reasoning_effort": "low",
 }
 MAXIMA = {
     "max_sessions": 20,
-    "session_token_budget": 200000,
-    "daily_token_budget": 2000000,
-    "context_token_limit": 24000,
-    "summary_token_limit": 2000,
+    "session_token_budget": 2000000,
+    "daily_token_budget": 20000000,
+    "context_max_bytes": 262144,
+    "summary_token_limit": 6000,
     "recent_turns": 12,
-    "max_output_tokens": 8192,
-    "max_tool_calls_per_request": 12,
+    "max_output_tokens": 32768,
+    "max_tool_calls_per_request": 36,
 }
 for _tool in TOOLS:
     DEFAULTS[f"tools.{_tool}.enabled"] = _tool == "query_docs"
-    DEFAULTS[f"tools.{_tool}.max_calls_per_request"] = 3
-    MAXIMA[f"tools.{_tool}.max_calls_per_request"] = 8
+    DEFAULTS[f"tools.{_tool}.max_calls_per_request"] = 9
+    MAXIMA[f"tools.{_tool}.max_calls_per_request"] = 24
 
 
 def system_defaults():
@@ -58,21 +58,69 @@ def system_defaults():
         "allowed_efforts": ["low", "medium", "high"],
         "allowed_user_modes": ["whitelist", "all", "blacklist"],
         "api_address": "https://api.deepseek.com",
-        "global_daily_token_budget": 5000000,
+        "global_daily_token_budget": 50000000,
         "request_timeout": 180,
         "model_timeout": 90,
-        "max_model_calls": 8,
+        "max_model_calls": 24,
         "group_concurrency": 2,
         "global_concurrency": 6,
         "group_queue_limit": 10,
         "global_queue_limit": 30,
         "tool_timeout": 20,
-        "tool_result_tokens": 3000,
+        "tool_result_max_bytes": 8192,
         "web_max_bytes": 2097152,
         "web_max_redirects": 3,
         "history_retention_days": 30,
         "system_prompt_max_chars": 4000,
     }
+
+
+# Legacy defaults are upgraded once; non-default administrator choices keep their value.
+LEGACY_DEFAULTS = {
+    "session_token_budget": 30000,
+    "daily_token_budget": 200000,
+    "context_max_bytes": 6000,
+    "summary_token_limit": 600,
+    "max_output_tokens": 2048,
+    "max_tool_calls_per_request": 5,
+    **{f"tools.{tool}.max_calls_per_request": 3 for tool in TOOLS},
+}
+LEGACY_MAXIMA = {
+    "session_token_budget": 200000,
+    "daily_token_budget": 2000000,
+    "context_max_bytes": 24000,
+    "summary_token_limit": 2000,
+    "max_output_tokens": 8192,
+    "max_tool_calls_per_request": 12,
+    **{f"tools.{tool}.max_calls_per_request": 8 for tool in TOOLS},
+}
+
+
+def upgrade_group_limits(values, *, maxima=False):
+    """Migrate a legacy mapping in place. Caller persists a version marker atomically."""
+    if "context_token_limit" in values:
+        # Hosts may have already injected the new schema default beside the old key.
+        values["context_max_bytes"] = values.pop("context_token_limit")
+    old = LEGACY_MAXIMA if maxima else LEGACY_DEFAULTS
+    new = MAXIMA if maxima else DEFAULTS
+    for key, previous in old.items():
+        if key in values and values[key] == previous:
+            values[key] = new[key]
+
+
+def upgrade_policy_limits(policy):
+    for section in ("defaults", "maxima"):
+        if section in policy:
+            upgrade_group_limits(policy[section], maxima=section == "maxima")
+    if "tool_result_tokens" in policy:
+        policy["tool_result_max_bytes"] = policy.pop("tool_result_tokens")
+    for key, previous, new in (
+        ("tool_result_max_bytes", 3000, 8192),
+        ("global_daily_token_budget", 5000000, 50000000),
+        ("max_model_calls", 8, 24),
+    ):
+        if policy.get(key) == previous:
+            policy[key] = new
 
 
 def upgrade_tools_policy(policy, fallback=None):
@@ -190,11 +238,6 @@ def validate_system(policy):
             else value,
             policy,
         )
-    if (
-        policy["defaults"]["summary_token_limit"]
-        >= policy["defaults"]["context_token_limit"]
-    ):
-        raise BusinessError("摘要上限必须小于上下文上限。")
 
 
 def effective(stored, policy):
@@ -214,6 +257,6 @@ def mask_key(key):
     return "sk-" + value[:2] + "*****" + value[-2:] if len(value) >= 8 else "*****"
 
 
-def estimate_tokens(value):
-    """Conservative UTF-8 byte budget plus protocol allowance, not billed usage."""
+def input_size_bytes(value):
+    """Serialized UTF-8 bytes plus protocol allowance; never a token count."""
     return len(json.dumps(value, ensure_ascii=False).encode("utf-8")) + 256
