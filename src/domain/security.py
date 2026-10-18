@@ -25,6 +25,11 @@ class SecretFilter:
             # Keep previously observed keys protected if live configuration changes.
             self._keys.add(key)
 
+    def register(self, key: str) -> None:
+        """Protect dynamically configured credentials for the process lifetime."""
+        if key:
+            self._keys.add(key)
+
     def contains(self, payload) -> bool:
         self._refresh()
         return bool(self._keys) and (

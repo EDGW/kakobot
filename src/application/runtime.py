@@ -26,6 +26,7 @@ from .deadlines.management import SuperDeadlineService
 from .deadlines.scheduler import DeadlineScheduler
 from .deadlines.service import DeadlineService
 from .dispatcher import Dispatcher
+from .group_discuss.service import DiscussService
 from .management.costs import CostService
 from .management.requests import RequestService
 from .messaging.announcements import AnnouncementService
@@ -62,6 +63,9 @@ class Runtime:
         )
         self.http = httpx.AsyncClient()
         self.model = ModelClient(config, self.http, self.usage)
+        self.discuss = DiscussService(
+            directory, config, self.roles, self.guard, self.http, self.data
+        )
         sessions = UserSessions()
         authorizer = Authorizer(self.roles)
         deadlines = DeadlineService(
@@ -111,7 +115,12 @@ class Runtime:
         task = asyncio.current_task()
         self.active.add(task)
         try:
+            if self.discuss.candidate(ctx) and await self.discuss.handle(ctx, gateway):
+                return True
+            if not self.dispatcher.should_handle(ctx):
+                return False
             await self.dispatcher.handle(ctx, gateway)
+            return True
         finally:
             self.active.discard(task)
 
@@ -143,4 +152,5 @@ class Runtime:
         self.conversations.close()
         self.audit.close()
         self.requests_data.close()
+        self.discuss.store.close()
         await self.http.aclose()

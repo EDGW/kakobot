@@ -53,5 +53,313 @@
     "type": "list",
     "default": [],
     "hint": "列入后保留身份组及手动命令权限，但不处理其普通私聊。Super/Admin 也可在此关闭自己的自动分析。"
+  },
+  "group_discuss": {
+    "description": "群 AI 对话：全局默认、上限与 DeepSeek 接入",
+    "type": "object",
+    "items": {
+      "defaults": {
+        "description": "defaults",
+        "type": "object",
+        "items": {
+          "max_sessions": {
+            "description": "max_sessions",
+            "type": "int",
+            "default": 5
+          },
+          "session_token_budget": {
+            "description": "session_token_budget",
+            "type": "int",
+            "default": 30000
+          },
+          "daily_token_budget": {
+            "description": "daily_token_budget",
+            "type": "int",
+            "default": 200000
+          },
+          "context_token_limit": {
+            "description": "context_token_limit",
+            "type": "int",
+            "default": 6000
+          },
+          "summary_token_limit": {
+            "description": "summary_token_limit",
+            "type": "int",
+            "default": 600
+          },
+          "recent_turns": {
+            "description": "recent_turns",
+            "type": "int",
+            "default": 4
+          },
+          "max_output_tokens": {
+            "description": "max_output_tokens",
+            "type": "int",
+            "default": 2048
+          },
+          "max_tool_calls_per_request": {
+            "description": "max_tool_calls_per_request",
+            "type": "int",
+            "default": 5
+          },
+          "user_mode": {
+            "description": "user_mode",
+            "type": "string",
+            "default": "whitelist"
+          },
+          "model_name": {
+            "description": "model_name",
+            "type": "string",
+            "default": ""
+          },
+          "reasoning_effort": {
+            "description": "reasoning_effort",
+            "type": "string",
+            "default": "low"
+          },
+          "tools.search_web.enabled": {
+            "description": "tools.search_web.enabled",
+            "type": "bool",
+            "default": false
+          },
+          "tools.search_web.max_calls_per_request": {
+            "description": "tools.search_web.max_calls_per_request",
+            "type": "int",
+            "default": 3
+          },
+          "tools.fetch_webpage.enabled": {
+            "description": "tools.fetch_webpage.enabled",
+            "type": "bool",
+            "default": false
+          },
+          "tools.fetch_webpage.max_calls_per_request": {
+            "description": "tools.fetch_webpage.max_calls_per_request",
+            "type": "int",
+            "default": 3
+          },
+          "tools.query_group_data.enabled": {
+            "description": "tools.query_group_data.enabled",
+            "type": "bool",
+            "default": false
+          },
+          "tools.query_group_data.max_calls_per_request": {
+            "description": "tools.query_group_data.max_calls_per_request",
+            "type": "int",
+            "default": 3
+          },
+          "tools.read_session_history.enabled": {
+            "description": "tools.read_session_history.enabled",
+            "type": "bool",
+            "default": false
+          },
+          "tools.read_session_history.max_calls_per_request": {
+            "description": "tools.read_session_history.max_calls_per_request",
+            "type": "int",
+            "default": 3
+          },
+          "system_prompt": {
+            "description": "群默认系统提示词，群 admin 可覆盖",
+            "type": "string",
+            "default": "符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容"
+          }
+        }
+      },
+      "maxima": {
+        "description": "maxima",
+        "type": "object",
+        "items": {
+          "max_sessions": {
+            "description": "max_sessions",
+            "type": "int",
+            "default": 20
+          },
+          "session_token_budget": {
+            "description": "session_token_budget",
+            "type": "int",
+            "default": 200000
+          },
+          "daily_token_budget": {
+            "description": "daily_token_budget",
+            "type": "int",
+            "default": 2000000
+          },
+          "context_token_limit": {
+            "description": "context_token_limit",
+            "type": "int",
+            "default": 24000
+          },
+          "summary_token_limit": {
+            "description": "summary_token_limit",
+            "type": "int",
+            "default": 2000
+          },
+          "recent_turns": {
+            "description": "recent_turns",
+            "type": "int",
+            "default": 12
+          },
+          "max_output_tokens": {
+            "description": "max_output_tokens",
+            "type": "int",
+            "default": 8192
+          },
+          "max_tool_calls_per_request": {
+            "description": "max_tool_calls_per_request",
+            "type": "int",
+            "default": 12
+          },
+          "tools.search_web.max_calls_per_request": {
+            "description": "tools.search_web.max_calls_per_request",
+            "type": "int",
+            "default": 8
+          },
+          "tools.fetch_webpage.max_calls_per_request": {
+            "description": "tools.fetch_webpage.max_calls_per_request",
+            "type": "int",
+            "default": 8
+          },
+          "tools.query_group_data.max_calls_per_request": {
+            "description": "tools.query_group_data.max_calls_per_request",
+            "type": "int",
+            "default": 8
+          },
+          "tools.read_session_history.max_calls_per_request": {
+            "description": "tools.read_session_history.max_calls_per_request",
+            "type": "int",
+            "default": 8
+          }
+        }
+      },
+      "tool_enabled": {
+        "description": "tool_enabled",
+        "type": "object",
+        "items": {
+          "search_web": {
+            "description": "search_web",
+            "type": "bool",
+            "default": false
+          },
+          "fetch_webpage": {
+            "description": "fetch_webpage",
+            "type": "bool",
+            "default": false
+          },
+          "query_group_data": {
+            "description": "query_group_data",
+            "type": "bool",
+            "default": false
+          },
+          "read_session_history": {
+            "description": "read_session_history",
+            "type": "bool",
+            "default": false
+          }
+        }
+      },
+      "allowed_models": {
+        "description": "allowed_models",
+        "type": "list",
+        "default": []
+      },
+      "allowed_efforts": {
+        "description": "allowed_efforts",
+        "type": "list",
+        "default": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "allowed_user_modes": {
+        "description": "allowed_user_modes",
+        "type": "list",
+        "default": [
+          "whitelist",
+          "all",
+          "blacklist"
+        ]
+      },
+      "api_address": {
+        "description": "api_address",
+        "type": "string",
+        "default": ""
+      },
+      "search_api_key": {
+        "description": "search_api_key",
+        "type": "string",
+        "default": ""
+      },
+      "global_daily_token_budget": {
+        "description": "global_daily_token_budget",
+        "type": "int",
+        "default": 5000000
+      },
+      "request_timeout": {
+        "description": "request_timeout",
+        "type": "int",
+        "default": 180
+      },
+      "model_timeout": {
+        "description": "model_timeout",
+        "type": "int",
+        "default": 90
+      },
+      "max_model_calls": {
+        "description": "max_model_calls",
+        "type": "int",
+        "default": 8
+      },
+      "group_concurrency": {
+        "description": "group_concurrency",
+        "type": "int",
+        "default": 2
+      },
+      "global_concurrency": {
+        "description": "global_concurrency",
+        "type": "int",
+        "default": 6
+      },
+      "group_queue_limit": {
+        "description": "group_queue_limit",
+        "type": "int",
+        "default": 10
+      },
+      "global_queue_limit": {
+        "description": "global_queue_limit",
+        "type": "int",
+        "default": 30
+      },
+      "tool_timeout": {
+        "description": "tool_timeout",
+        "type": "int",
+        "default": 20
+      },
+      "tool_result_tokens": {
+        "description": "tool_result_tokens",
+        "type": "int",
+        "default": 3000
+      },
+      "web_max_bytes": {
+        "description": "web_max_bytes",
+        "type": "int",
+        "default": 2097152
+      },
+      "web_max_redirects": {
+        "description": "web_max_redirects",
+        "type": "int",
+        "default": 3
+      },
+      "history_retention_days": {
+        "description": "history_retention_days",
+        "type": "int",
+        "default": 30
+      },
+      "system_prompt_max_chars": {
+        "description": "群系统提示词最大字符数",
+        "type": "int",
+        "default": 4000
+      }
+    },
+    "hint": "独立于总结/DDL。群默认关闭；API 地址和模型白名单需显式配置。/super group-discuss limits 修改会持久化为运行数据覆盖，后续以该覆盖为准。search_api_key 为 Tavily 密钥。"
   }
 }

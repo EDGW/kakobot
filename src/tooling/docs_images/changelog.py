@@ -11,7 +11,12 @@ def render_changelog(source, output, *, width=1200, size=25):
     # Normalize only the rendering copy: # Dev and historical version headings
     # belong under one visible title while the on-disk source stays untouched.
     text = re.sub(r"^# 更新日志\s*$", "", text, flags=re.MULTILINE)
-    text = re.sub(r"^# (Dev|v\d+\.\d+\.\d+)\s*$", r"## \1", text, flags=re.MULTILINE)
+    text = re.sub(
+        r"^# (Dev|v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*$",
+        r"## \1",
+        text,
+        flags=re.MULTILINE,
+    )
     document = parse_document("# 更新日志\n\n" + text)
     cards = []
     for version in document.children[0].children:

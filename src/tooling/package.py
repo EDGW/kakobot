@@ -14,7 +14,7 @@ def main():
     root = Path(__file__).resolve().parents[2]
     check(root)
     metadata = (root / "metadata.yaml").read_text(encoding="utf-8")
-    version = re.search(r"^version:\s*(v[0-9.]+)\s*$", metadata, re.MULTILINE)
+    version = re.search(r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\s*$", metadata, re.MULTILINE)
     if version is None:
         raise ValueError("metadata.yaml 缺少有效版本号。")
     names = [

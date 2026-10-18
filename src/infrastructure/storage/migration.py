@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from ...domain.context import qq_id
+from ..group_discuss.store import DiscussStore
 from .access.readonly import ReadonlyPolicy
 from .access.roles import RoleStore, empty_roles, validate_roles
 from .broadcasts.conversations import ConversationStore
@@ -15,7 +16,7 @@ from .deadlines.preferences import PreferenceStore
 from .deadlines.tasks import initialize_schema, validate_database
 from .json_store import atomic_json, read_json
 
-VERSION = "1.3.2"
+VERSION = "2.0.0-alpha.1"
 
 
 @contextmanager
@@ -175,6 +176,32 @@ def _mark_version(marker, *, upgraded=False):
         raise ValueError("迁移版本标记回读失败。")
 
 
+def _backup_upgrade(directory, version):
+    backup = directory / ("migration-backup-" + version)
+    backup.mkdir(exist_ok=True)
+    for source in directory.iterdir():
+        if not source.is_file() or source.suffix not in {".json", ".sqlite3", ".key"}:
+            continue
+        target = backup / source.name
+        if target.exists():
+            continue
+        if source.suffix == ".sqlite3":
+            temporary = target.with_suffix(".tmp")
+            temporary.unlink(missing_ok=True)
+            before, after = sqlite3.connect(source), sqlite3.connect(temporary)
+            try:
+                before.backup(after)
+                if after.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                    raise ValueError("升级备份完整性检查失败。")
+            finally:
+                before.close()
+                after.close()
+            os.replace(temporary, target)
+        else:
+            shutil.copy2(source, target)
+        os.chmod(target, 0o600)
+
+
 def migrate(directory: Path):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -202,8 +229,18 @@ def migrate(directory: Path):
             "1.2.2",
             "1.3.0",
             "1.3.1",
+            "1.3.2",
         }:
+            if version != VERSION:
+                _backup_upgrade(directory, version)
             _validate(directory)
+            if (
+                version == VERSION
+                and not (directory / "group_discuss.sqlite3").exists()
+            ):
+                raise ValueError("当前版本的 discuss 数据库缺失，拒绝清空重建。")
+            discussions = DiscussStore(directory)
+            discussions.close()
             if version != VERSION:
                 # Compatible patches keep the existing schema and all data.
                 _mark_version(marker, upgraded=True)
@@ -246,4 +283,6 @@ def migrate(directory: Path):
         _save_or_verify(directory / "readonly.json", readonly)
         _database(database)
         _validate(directory)
+        discussions = DiscussStore(directory)
+        discussions.close()
         _mark_version(marker, upgraded=existing)

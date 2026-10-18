@@ -125,7 +125,8 @@ class InputFilter(filter.CustomFilter):
 
     def filter(self, event, cfg):
         return not event.get_group_id() or any(
-            isinstance(part, At) and str(part.qq) == str(event.get_self_id())
+            (isinstance(part, At) and str(part.qq) == str(event.get_self_id()))
+            or type(part).__name__.lower() == "reply"
             for part in event.get_messages()
         )
 
@@ -311,11 +312,16 @@ class AstrBotAdapter:
         platform_id = self.platform_id(matches[0])
         ctx = incoming(event, platform_id)
         self.routes[(platform_id, ctx.bot)] = event.bot
-        if not self.runtime.dispatcher.should_handle(ctx):
+        if not (
+            self.runtime.dispatcher.should_handle(ctx)
+            or self.runtime.discuss.candidate(ctx)
+        ):
             self.runtime.observe(ctx)
             return
-        event.stop_event()
-        await self.runtime.handle(ctx, OneBotGateway(event.bot, ctx.bot, platform_id))
+        if await self.runtime.handle(
+            ctx, OneBotGateway(event.bot, ctx.bot, platform_id)
+        ):
+            event.stop_event()
 
     async def terminate(self):
         for client, handler in self.request_hooks:

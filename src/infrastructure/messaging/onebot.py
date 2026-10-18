@@ -287,7 +287,7 @@ class OneBotGateway:
                 message=[{"type": "face", "data": {"id": SPARK_FACE_ID}}],
             )
 
-    async def send(self, *, text: str, group: str = "", user: str = "") -> None:
+    async def send(self, *, text: str, group: str = "", user: str = ""):
         if bool(group) == bool(user):
             raise ValueError("必须指定且只能指定一个群或私聊目标。")
         action = "send_group_msg" if group else "send_private_msg"
@@ -297,7 +297,7 @@ class OneBotGateway:
         # Array-format plain text prevents /send text being interpreted as CQ code.
         token = _FORMAT_TEXT.set(True)
         try:
-            await self.bot.call_action(
+            return await self.bot.call_action(
                 action,
                 **destination,
                 self_id=self.self_id,
