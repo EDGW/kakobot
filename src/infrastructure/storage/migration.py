@@ -13,7 +13,7 @@ from .deadlines.preferences import PreferenceStore
 from .deadlines.tasks import initialize_schema, validate_database
 from .json_store import atomic_json, read_json
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 
 @contextmanager
@@ -192,6 +192,7 @@ def migrate(directory: Path):
             "1.2.0",
             "1.2.1",
             "1.2.2",
+            "1.3.0",
         }:
             _validate(directory)
             if version != VERSION:

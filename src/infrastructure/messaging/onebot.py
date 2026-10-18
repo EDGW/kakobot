@@ -20,12 +20,12 @@ _FORMAT_TEXT = ContextVar("kakobot_format_text", default=False)
 SPARK_FACE_ID = "424"  # NapCat /续标识: native large animated "续火花" sticker.
 
 
-def image_segment(png: bytes) -> dict:
-    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise ValueError("图片必须为 PNG 格式。")
+def image_segment(data: bytes) -> dict:
+    if not data.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")):
+        raise ValueError("图片必须为 PNG 或 JPEG 格式。")
     return {
         "type": "image",
-        "data": {"file": "base64://" + base64.b64encode(png).decode("ascii")},
+        "data": {"file": "base64://" + base64.b64encode(data).decode("ascii")},
     }
 
 
@@ -324,10 +324,10 @@ class OneBotGateway:
             -100:
         ]
 
-    async def send_image(self, png: bytes, *, group: str = "", user: str = ""):
+    async def send_image(self, data: bytes, *, group: str = "", user: str = ""):
         if bool(group) == bool(user):
             raise ValueError("必须指定且只能指定一个群或私聊目标。")
-        card = image_segment(png)
+        card = image_segment(data)
         destination = (
             {"group_id": int(qq_id(group))} if group else {"user_id": int(qq_id(user))}
         )

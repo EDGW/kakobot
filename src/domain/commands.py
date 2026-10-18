@@ -1,4 +1,4 @@
-"""Single command catalog consumed by dispatch, authorization and help."""
+"""Command dispatch and authorization catalog, including image-help entry points."""
 
 from dataclasses import dataclass
 
@@ -43,13 +43,31 @@ ALL_SUPER = {"CHAT": SUPER, "GROUP": SUPER}
 CREATE = {"CHAT": AnyOf(("ddl",)), "GROUP": AnyOf(("admin", "group.ddl"))}
 CATALOG = (
     CommandSpec(
+        "/changelog",
+        "",
+        ALL_ANY,
+        "CURRENT",
+        "changelog",
+        "/changelog",
+        "发送构建时生成的更新日志图片",
+    ),
+    CommandSpec(
+        "/version",
+        "",
+        ALL_ANY,
+        "CURRENT",
+        "version",
+        "/version",
+        "显示当前安装版本",
+    ),
+    CommandSpec(
         "/help",
         "",
         ALL_ANY,
         "CURRENT",
         "help",
-        "/help [命令]",
-        "显示可用命令及资源限制",
+        "/help [功能组]",
+        "发送当前会话的功能组帮助图片，默认 help 页面",
     ),
     CommandSpec(
         "/role",
@@ -195,12 +213,12 @@ LEGACY |= {
 
 def management_specs():
     entries = [
-        ("", "super_help", "/super", "Super 管理帮助"),
+        ("", "super_help", "/super", "发送 Super 默认帮助图片"),
         (
             "help",
             "super_help",
-            "/super help [role|ddl|schedule|request|cost|announce|readonly]",
-            "分类查看管理帮助",
+            "/super help [help|role|ddl|schedule|request|cost|announce|readonly]",
+            "发送当前会话的 Super 功能组帮助图片，默认 help 页面",
         ),
         (
             "schedule",

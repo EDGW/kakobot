@@ -2,7 +2,7 @@
 
 [命令目录](../README.md) · [返回 README](../../../README.md) · [配置与存储](../../configuration.md)
 
-只有配置项 `super_user` 指定的账号可调用。`/super` 或 `/super help` 查看管理帮助；非 Super 的普通帮助不展示这些入口。
+只有配置项 `super_user` 指定的账号可调用。`/super` 或 `/super help` 发送当前 CHAT/GROUP 的 Super help 图片；`/super help 功能组` 发送该组整页图片，例如 `/super help announce`。非 Super 无法使用 Super 帮助入口。
 
 | 功能 | 文档 |
 | --- | --- |

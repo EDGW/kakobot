@@ -60,7 +60,7 @@ jobs:
           if version is None or version[1] != tag:
               raise SystemExit("Version tag and metadata.yaml version must match.")
           changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
-          sections = re.split(r"^## ", changelog, flags=re.MULTILINE)
+          sections = re.split(r"^#{1,2} ", changelog, flags=re.MULTILINE)
           notes = next(
               (section.partition("\n")[2].strip() for section in sections[1:]
                if section.partition("\n")[0].strip() == tag),
@@ -75,7 +75,9 @@ jobs:
           PY
 
       - name: Build and verify installable ZIP
-        run: python -m src.tooling.package
+        run: |
+          python -m pip install 'Pillow>=10.4,<13'
+          make publish PYTHON=python
 
       - name: Save installable ZIP
         uses: actions/upload-artifact@v7.0.2

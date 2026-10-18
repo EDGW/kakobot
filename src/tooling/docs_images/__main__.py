@@ -3,7 +3,8 @@
 import argparse
 from pathlib import Path
 
-from .document import cards_for, parse_document
+from .changelog import render_changelog
+from .document import EXCLUDED_STEMS, cards_for, documentation_files, parse_document
 from .render import render_document
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -18,6 +19,12 @@ def main():
     )
     parser.add_argument("--output", type=Path, help="输出目录，默认源文档目录下 pics/")
     parser.add_argument(
+        "--changelog",
+        type=Path,
+        default=ROOT / "CHANGELOG.md",
+        help="更新日志源文件，默认仓库 CHANGELOG.md",
+    )
+    parser.add_argument(
         "--width", type=int, default=1200, help="图片宽度，默认1200像素，至少640"
     )
     parser.add_argument(
@@ -30,11 +37,18 @@ def main():
         parser.error("源文档目录不存在。")
     if not 640 <= args.width <= 65000 or not 16 <= args.font_size <= 48:
         parser.error("width 须在640至65000之间，font-size 须在16至48之间。")
-    files = [
-        path for path in sorted(source.rglob("*.md")) if not path.is_relative_to(output)
-    ]
+    files = documentation_files(source, output)
     if not files:
-        parser.error("源目录中没有 Markdown 文档。")
+        parser.error("源目录中没有可生成图片的功能文档。")
+    # Remove only previously generated excluded pages, preserving other output.
+    for path in sorted(source.rglob("*.md")):
+        if path.is_relative_to(output) or path.stem.lower() not in EXCLUDED_STEMS:
+            continue
+        relative = path.relative_to(source)
+        for location in ("chat", "group"):
+            (output / relative.parent / f"{relative.stem}-{location}.jpeg").unlink(
+                missing_ok=True
+            )
     count = 0
     for path in files:
         document = parse_document(path.read_text(encoding="utf-8"))
@@ -64,7 +78,12 @@ def main():
             )
             print(f"{target} ({width} × {height})")
             count += 1
-    print(f"完成：{len(files)} 个文档，{count} 张 JPEG。")
+    target = output / "changelog.jpeg"
+    width, height = render_changelog(
+        args.changelog, target, width=args.width, size=args.font_size
+    )
+    print(f"{target} ({width} × {height})")
+    print(f"完成：{len(files)} 个功能文档及更新日志，{count + 1} 张 JPEG。")
 
 
 if __name__ == "__main__":

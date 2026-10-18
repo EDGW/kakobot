@@ -5,7 +5,9 @@ import time
 
 import httpx
 
+from ..infrastructure.messaging.help_images import HelpImageStore
 from ..infrastructure.messaging.onebot import OutboundGuard
+from ..infrastructure.messaging.release_info import ReleaseInfoStore
 from ..infrastructure.model import ModelClient
 from ..infrastructure.storage.access.readonly import ReadonlyPolicy
 from ..infrastructure.storage.access.roles import RoleStore
@@ -26,6 +28,8 @@ from .dispatcher import Dispatcher
 from .management.costs import CostService
 from .management.requests import RequestService
 from .messaging.announcements import AnnouncementService
+from .messaging.help import HelpService
+from .messaging.release import ReleaseService
 from .messaging.summary import SummaryService
 from .roles.management import SuperRoleService
 from .roles.service import RoleService
@@ -85,6 +89,8 @@ class Runtime:
             SuperRoleService(self.roles, self.audit, self.readonly),
             SuperDeadlineService(deadlines, self.audit),
             self.requests,
+            HelpService(HelpImageStore()),
+            ReleaseService(ReleaseInfoStore()),
         )
         self.scheduler = DeadlineScheduler(
             deadlines, resolve_gateway, diagnostic_gateway

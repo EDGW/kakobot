@@ -8,7 +8,6 @@ from ..domain.deadlines import DeadlineConfirmation
 from ..domain.errors import BusinessError, ModelError
 from ..domain.security import SecretViolation
 from ..infrastructure.messaging.onebot import ReadonlyViolation, deadline_context
-from ..presentation.help import render_help, render_super_help
 from ..presentation.names import NameDirectory
 
 logger = logging.getLogger("astrbot")
@@ -30,6 +29,8 @@ class Dispatcher:
         super_roles,
         super_deadlines,
         requests,
+        help_service,
+        release_service,
     ):
         self.roles, self.readonly, self.guard, self.authorizer = (
             roles,
@@ -44,6 +45,8 @@ class Dispatcher:
             analysis,
         )
         self.costs = costs
+        self.help_service = help_service
+        self.release_service = release_service
         self.announcements = announcements
         self.super_roles, self.super_deadlines, self.requests = (
             super_roles,
@@ -146,14 +149,14 @@ class Dispatcher:
             return await self.super_deadlines.handle(action, gateway, names)
         if handler == "requests":
             return await self.requests.handle(action, gateway, names)
-        if handler == "super_help":
-            return self.super_help(action.context, action.arguments)
+        if handler in {"help", "super_help"}:
+            return await self.help_service.handle(action, gateway)
+        if handler in {"version", "changelog"}:
+            return await self.release_service.handle(action, gateway)
         if handler == "deadlines":
             return await self.deadlines.handle(action, gateway, names, on_submitted)
         if handler == "summary":
             return await self.summaries.handle(action, gateway, names, on_submitted)
-        if handler == "help":
-            return self.help(action.context, action.arguments)
         if handler == "cost":
             return await self.costs.handle(action, names)
         if handler in {"announce", "announce_reject"}:
@@ -203,48 +206,6 @@ class Dispatcher:
         if handler == "hello":
             return "好牛魔呢"
         raise RuntimeError("命令未绑定处理器。")
-
-    def help(self, ctx, query):
-        roles = self.authorizer.effective(ctx)
-        query = query.strip().removeprefix("/")
-        if query == "super" or query.startswith("super "):
-            return self.super_help(ctx, query[5:].strip())
-        matches = [
-            spec
-            for spec in CATALOG
-            if spec.name != "/super"
-            and spec.allowed(ctx.location, roles)
-            and (
-                not query
-                or (spec.name + " " + spec.subcommand).strip().removeprefix("/")
-                == query
-                or spec.name.removeprefix("/") == query
-            )
-        ]
-        return render_help(
-            ctx,
-            matches,
-            roles,
-            autoanalysis_enabled=self.analysis.enabled(ctx),
-        )
-
-    def super_help(self, ctx, query):
-        roles = self.authorizer.effective(ctx)
-        if "super" not in roles:
-            raise BusinessError("没有可用的对应命令。")
-        query = " ".join(query.lower().strip().split())
-        specs = [
-            spec
-            for spec in CATALOG
-            if spec.name == "/super"
-            and spec.allowed(ctx.location, roles)
-            and (
-                not query
-                or spec.subcommand == query
-                or spec.subcommand.startswith(query + " ")
-            )
-        ]
-        return render_super_help(ctx, specs)
 
     async def reply(self, ctx, gateway, text):
         self.guard.secrets.check(text)

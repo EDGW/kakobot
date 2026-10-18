@@ -188,7 +188,9 @@ def render_document(title, source, cards, location, output, *, width=1200, size=
     layout.text(plain(title), 40, width - 80, size=size + 18, bold=True)
     layout.y += 12
     layout.text(
-        "私聊 CHAT" if location == "CHAT" else "群聊 GROUP",
+        {"CHAT": "私聊 CHAT", "GROUP": "群聊 GROUP", "ALL": "更新记录 · 全部会话"}[
+            location
+        ],
         40,
         width - 80,
         size=21,

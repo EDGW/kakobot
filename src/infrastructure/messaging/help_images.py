@@ -1,0 +1,44 @@
+"""Read built documentation JPEGs from the ordinary or Super help directory."""
+
+import re
+from pathlib import Path
+
+from ...domain.errors import BusinessError
+
+PICS = Path(__file__).resolve().parents[3] / "docs/pics/commands"
+
+
+class HelpImageStore:
+    def __init__(self, directory=PICS):
+        self.directory = directory
+
+    def read(self, topic, location, *, super_help=False):
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", topic) or location not in {
+            "CHAT",
+            "GROUP",
+        }:
+            raise BusinessError(
+                "没有对应的帮助页面，请使用 /help 或 /super help 查看目录。"
+            )
+        directory = self.directory / "super" if super_help else self.directory
+        path = directory / f"{topic}-{location.lower()}.jpeg"
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError as exc:
+            sources = self.directory.parent.parent / "commands"
+            if super_help:
+                sources /= "super"
+            if topic == "help" or (sources / f"{topic}.md").is_file():
+                raise BusinessError(
+                    "帮助图片缺失，请联系 Super 重新执行 make publish 并安装。"
+                ) from exc
+            raise BusinessError(
+                "没有对应的帮助页面，请使用 /help 或 /super help 查看目录。"
+            ) from exc
+        except OSError as exc:
+            raise BusinessError(
+                "帮助图片暂时无法读取，请联系 Super 检查安装文件。"
+            ) from exc
+        if not data.startswith(b"\xff\xd8\xff"):
+            raise BusinessError("帮助图片不是有效的 JPEG，请联系 Super 重新构建。")
+        return data
