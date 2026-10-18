@@ -843,6 +843,7 @@ async def test_help_cards_and_aliases(service, tmp_path):
         "2.0.0-beta.1.5",
         "2.0.0-beta.2.0",
         "2.0.0.beta.2",
+        "2.0.0-beta.2.1",
     ],
 )
 def test_prerelease_upgrade_preserves_state_and_queues_announcement(
@@ -2501,7 +2502,8 @@ async def test_business_card_text_reaches_model_and_image_reaches_user(service):
     result = await execute_commands(turn, ["/role"])
     assert result[0]["status"] == "completed"
     assert "super" in result[0]["text"] and "测试用户" in result[0]["text"]
-    assert len(g.sent) > before and g.sent[-1]["data"].startswith(b"\x89PNG")
+    assert len(g.sent) > before and g.sent[-2]["data"].startswith(b"\x89PNG")
+    assert "成功：/role" in g.sent[-1]["text"]
     assert "图片等内容" not in result[0]["text"]
 
 
@@ -2716,3 +2718,53 @@ async def test_private_slash_commands_never_enter_discuss_or_autoanalysis(servic
     runtime.dispatcher.handle.assert_awaited_once()
     assert not runtime.candidate(ctx(text=" /unknown"))
     assert "已结束旧上下文" in await personal.user_command(ctx(), g, "new")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actor,limit,count", [("2", 2, 4), ("1", 1, 8)])
+async def test_configurable_command_count_and_super_exemption(service, actor, limit, count):
+    from unittest.mock import AsyncMock
+
+    from src.application.group_discuss.commands import execute_commands
+    from src.application.group_discuss.harness import Turn
+
+    g = Gateway()
+    scope = await enable(service, g)
+    service.policy["defaults"]["tools.execute_commands.enabled"] = True
+    service.policy["defaults"]["tools.execute_commands.max_commands_per_request"] = limit
+    session = service.store.create_session(scope, actor, 5)
+    turn = Turn(service, ctx(actor, "10"), g, scope, session, service.store.new_turn(session, actor))
+    executor = AsyncMock(return_value="OK")
+    service.command_executor = SimpleNamespace(execute=executor)
+    commands = [f"/ddl show {n}" for n in range(count)]
+    result = await execute_commands(turn, commands)
+    allowed = count if actor == "1" else limit
+    assert [v["status"] for v in result] == ["completed"] * allowed + ["blocked"] * (count - allowed)
+    assert executor.await_count == allowed
+    assert all(command in g.sent[-1]["text"] for command in commands)
+    again = await execute_commands(turn, [commands[0]])
+    assert again[0]["reused"]
+    assert "未重复执行" in g.sent[-1]["text"]
+    # A new configuration is read again before each command, including later batches.
+    service.policy["defaults"]["tools.execute_commands.max_commands_per_request"] = 1
+    extra = await execute_commands(turn, ["/version sk-unregistered-secret"])
+    assert extra[0]["status"] == ("completed" if actor == "1" else "blocked")
+    assert "sk-unregistered-secret" not in g.sent[-1]["text"]
+    assert "密钥已隐藏" in g.sent[-1]["text"]
+
+
+def test_command_count_policy_upgrade_and_bounds():
+    from src.domain.group_discuss.config import upgrade_tools_policy, validate_group
+
+    policy = system_defaults()
+    key = "tools.execute_commands.max_commands_per_request"
+    policy["defaults"].pop(key)
+    policy["maxima"].pop(key)
+    upgrade_tools_policy(policy)
+    assert policy["defaults"][key] == 5
+    assert policy["maxima"][key] == 100
+    validate_system(policy)
+    validate_group(key, 12, policy)
+    for value in [0, -1, 101, True]:
+        with pytest.raises(BusinessError):
+            validate_group(key, value, policy)

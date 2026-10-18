@@ -1,6 +1,7 @@
 """Scoped business commands; no shell, other plugins or global AI credentials."""
 
 import hashlib
+import re
 from dataclasses import replace
 
 from ...domain.commands import resolve
@@ -125,12 +126,12 @@ async def execute_commands(turn, commands):
     """Persist a claim before any await or side effect; uncertain work is never retried."""
     if (
         not isinstance(commands, list)
-        or not 1 <= len(commands) <= 5
+        or not commands
         or any(
             not isinstance(c, str) or not c.strip() or len(c) > 2000 for c in commands
         )
     ):
-        raise BusinessError("每批须为 1～5 条命令，每条最多 2000 字符。")
+        raise BusinessError("每批至少一条命令，每条最多 2000 字符。")
     executor = turn.service.command_executor
     if executor is None:
         raise BusinessError("业务命令执行器未初始化。")
@@ -156,7 +157,9 @@ async def execute_commands(turn, commands):
         ).hexdigest()
         try:
             previous = store.claim_command(
-                turn.scope, turn.session, turn.id, fingerprint
+                turn.scope, turn.session, turn.id, fingerprint,
+                limit=None if turn.service.global_super(actor) else
+                turn.config["tools.execute_commands.max_commands_per_request"],
             )
         except BusinessError as exc:
             results.append({"status": "blocked", "text": str(exc)})
@@ -179,6 +182,21 @@ async def execute_commands(turn, commands):
             }
         store.finish_command(turn.scope, turn.session, actor, fingerprint, result)
         results.append(result)
+    labels = {
+        "completed": "成功", "rejected": "拒绝", "blocked": "未执行",
+        "uncertain": "结果未确认",
+    }
+    lines = []
+    for command, result in zip(commands, results, strict=True):
+        # Newly supplied credentials may not have been registered yet.
+        safe = re.sub(r"(?i)sk-[^\s\"']+", "[密钥已隐藏]", command)
+        safe = re.sub(r"(?i)((?:api_?key|token|password)\s*(?:=|\s)\s*)\S+", r"\1[已隐藏]", safe)
+        safe = turn.service.guard.secrets.redact(safe)
+        label = "复用结果，未重复执行" if result.get("reused") else labels.get(result["status"], result["status"])
+        lines.append(f"{label}：{safe}")
+    await turn.service.send(
+        turn.ctx, turn.gateway, "机器人业务命令执行记录：\n" + "\n".join(lines), turn.session
+    )
     # Preserve every status when the shared tool layer crops large command output.
     budget = min(
         turn.service.policy["tool_result_max_bytes"],

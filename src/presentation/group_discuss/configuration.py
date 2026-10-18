@@ -29,6 +29,8 @@ SECTIONS = [
     (
         "工具权限与限次",
         {
+            "tools.execute_commands.max_commands_per_request": "每轮业务命令条数（Super 豁免）",
+            **{
             f"tools.{tool}.{suffix}": label
             + ("开关" if suffix == "enabled" else "每请求次数")
             for tool, label in (
@@ -40,6 +42,7 @@ SECTIONS = [
                 ("execute_commands", "首轮业务命令"),
             )
             for suffix in ("enabled", "max_calls_per_request")
+            },
         },
     ),
     ("群系统提示词", {"system_prompt": "当前提示词"}),

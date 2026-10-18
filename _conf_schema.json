@@ -181,6 +181,11 @@
             "description": "每请求业务命令工具批次数，整个首轮另限 5 条不同命令",
             "type": "int",
             "default": 9
+          },
+          "tools.execute_commands.max_commands_per_request": {
+            "description": "每轮不同业务命令条数上限（Super 豁免）",
+            "type": "int",
+            "default": 5
           }
         }
       },
@@ -257,6 +262,11 @@
             "description": "业务命令工具每请求批次数上限",
             "type": "int",
             "default": 24
+          },
+          "tools.execute_commands.max_commands_per_request": {
+            "description": "每轮不同业务命令条数上限（Super 豁免）",
+            "type": "int",
+            "default": 100
           }
         }
       },

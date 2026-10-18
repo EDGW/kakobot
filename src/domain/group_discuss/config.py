@@ -29,6 +29,7 @@ DEFAULT_SYSTEM_PROMPT = LEGACY_SYSTEM_PROMPT + "。\n" + OUTPUT_INSTRUCTIONS
 DEFAULTS = {
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
     "max_sessions": 5,
+    "tools.execute_commands.max_commands_per_request": 5,
     "session_token_budget": 300000,
     "daily_token_budget": 2000000,
     "context_max_bytes": 65536,
@@ -42,6 +43,7 @@ DEFAULTS = {
 }
 MAXIMA = {
     "max_sessions": 20,
+    "tools.execute_commands.max_commands_per_request": 100,
     "session_token_budget": 2000000,
     "daily_token_budget": 20000000,
     "context_max_bytes": 262144,
@@ -147,10 +149,12 @@ def upgrade_tools_policy(policy, fallback=None):
             "tools.query_docs.max_calls_per_request",
             "tools.execute_commands.enabled",
             "tools.execute_commands.max_calls_per_request",
+            "tools.execute_commands.max_commands_per_request",
         ),
         "maxima": (
             "tools.query_docs.max_calls_per_request",
             "tools.execute_commands.max_calls_per_request",
+            "tools.execute_commands.max_commands_per_request",
         ),
         "tool_enabled": ("query_docs", "execute_commands"),
     }.items():

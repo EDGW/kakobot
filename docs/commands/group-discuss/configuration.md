@@ -262,3 +262,20 @@ show 查看全部系统设置；set 修改指定项。默认模型白名单已�
 ```
 
 旧持久化配置缺少该字段时自动继承新默认值；通过命令保存的系统策略优先于部署配置。该配置每次模型请求读取，所有 AI 调用仍使用群 DeepSeek Key。模型判断存在不确定性，不保证关键词每次命中。
+
+#### 业务命令条数配置
+
+| 配置项 | 默认 | 初始系统上限 | 说明 |
+| --- | --- | --- | --- |
+| `tools.execute_commands.max_commands_per_request` | 5 | 100 | 私聊每轮或群首轮不同命令总数；失败计入；全局 Super 豁免条数限制 |
+
+全局 Super 可修改 defaults 与 maxima；群 admin 可设置本群值，个人值由 Super 设置。工具调用批次数仍由 max_calls_per_request 单独控制。
+
+```text
+/group-discuss admin config set 123456 tools.execute_commands.max_commands_per_request 10
+/super discuss config set 123456 tools.execute_commands.max_commands_per_request 10
+/super discuss limits set defaults.tools.execute_commands.max_commands_per_request 5
+/super discuss limits set maxima.tools.execute_commands.max_commands_per_request 100
+```
+
+执行后程序向用户列出命令及结果，敏感参数脱敏；相同命令复用时明确说明未重复执行。

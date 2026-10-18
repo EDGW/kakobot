@@ -413,7 +413,7 @@ class DiscussStore:
             )
         return saved["actor"]
 
-    def claim_command(self, scope, session, turn, fingerprint):
+    def claim_command(self, scope, session, turn, fingerprint, *, limit=5):
         with self.db:
             actor = self.command_actor(scope, session, turn)
             row = self.db.execute(
@@ -430,9 +430,9 @@ class DiscussStore:
                 "SELECT COUNT(*) FROM command_runs WHERE session=? AND (?=0 OR turn=?)",
                 (session, int(len(json.loads(scope)) == 4), turn),
             ).fetchone()[0]
-            if count >= 5:
+            if limit is not None and count >= limit:
                 raise BusinessError(
-                    "群聊首轮或私聊本轮最多执行 5 条不同业务命令（失败也计入）。"
+                    f"群聊首轮或私聊本轮最多执行 {limit} 条不同业务命令（失败也计入）。"
                 )
             self.db.execute(
                 "INSERT INTO command_runs(session,fingerprint,turn) VALUES (?,?,?)",
