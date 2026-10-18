@@ -32,14 +32,15 @@ def check(root):
                 raise ValueError(
                     f"本地导入不存在：{path.relative_to(root)}:{node.lineno}"
                 )
-            if path.parent.name == "domain" and target.parent.name not in {"domain"}:
+            domain = root / "src/domain"
+            if path.is_relative_to(domain) and not target.is_relative_to(domain):
                 raise ValueError("领域层依赖了其他实现层。")
     root_python = {path.name for path in root.glob("*.py")}
     if root_python != {"__init__.py", "main.py"}:
         raise ValueError("根目录仍有入口以外的 Python 实现。")
     metadata = (root / "metadata.yaml").read_text(encoding="utf-8")
     version = re.search(r"^version:\s*v([0-9.]+)\s*$", metadata, re.MULTILINE)
-    assignments = trees[root / "src/infrastructure/migration.py"].body
+    assignments = trees[root / "src/infrastructure/storage/migration.py"].body
     expected = next(
         ast.literal_eval(node.value)
         for node in assignments

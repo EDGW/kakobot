@@ -98,7 +98,7 @@ def render_help(ctx, specs, roles, *, autoanalysis_enabled=False):
     )
     if "super" in roles:
         lines.append(
-            "Super 管理入口：/super help（身份组、跨会话 DDL、申请、费用、广播、只读群）。"
+            "Super 管理入口：/super help（身份组、跨会话 DDL、提醒调度、申请、费用、广播、只读群）。"
         )
     for title, commands in grouped.items():
         if not commands:
@@ -137,6 +137,7 @@ def render_super_help(ctx, specs):
     categories = {
         "role": "身份组",
         "ddl": "DDL 管理",
+        "schedule": "提醒调度",
         "request": "申请审批",
         "cost": "费用",
         "announce": "广播",

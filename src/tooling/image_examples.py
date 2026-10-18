@@ -5,7 +5,7 @@ from itertools import count
 from pathlib import Path
 
 from ..domain.deadlines import BEIJING
-from ..presentation.deadline_image import render_deadlines, render_reminder
+from ..presentation.deadlines.image import render_deadlines, render_reminder
 
 
 def main():

@@ -10,8 +10,13 @@ from astrbot.api.star import StarTools
 
 from ..application.runtime import Runtime
 from ..domain.context import CommandContext
-from ..infrastructure.messages import MAX_DEPTH, message_content, segments, visible_text
-from ..infrastructure.onebot import OneBotGateway
+from ..infrastructure.messaging.messages import (
+    MAX_DEPTH,
+    message_content,
+    segments,
+    visible_text,
+)
+from ..infrastructure.messaging.onebot import OneBotGateway
 
 logger = logging.getLogger("astrbot")
 
@@ -155,7 +160,7 @@ class AstrBotAdapter:
     async def _report_startup(self, config, exc):
         from types import SimpleNamespace
 
-        from ..infrastructure.onebot import OutboundGuard
+        from ..infrastructure.messaging.onebot import OutboundGuard
 
         policy = SimpleNamespace(
             super_user=str(config.get("super_user", "000000000")),

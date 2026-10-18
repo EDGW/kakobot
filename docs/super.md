@@ -110,12 +110,23 @@ OneBot 上报 `request.friend` 或 `request.group`（`add`/`invite`）时，插�
 | 命令 | 行为 |
 | --- | --- |
 | `/super cost [user QQ号\|group 群号]` | 查询近1、3、7、30天及累计输入/输出 tokens 和人民币费用；不带参数查看当前机器人全部 |
-| `/super announce` | 广播当前版本使用提示 |
+| `/super schedule [user QQ号\|group 群号]` | 查看当前机器人未来待发提醒；不带参数列出全部用户和群，按下一次提醒时间排序 |
+| `/super announce` | 每次读取 `src/UPDATE.md` 并广播更新文案 |
 | `/super announce text 内容` | 广播指定文字 |
 | `/super readonly list` | 私聊查看只读群 |
 | `/super readonly add 群号` | 私聊将群设为只读 |
 | `/super readonly remove 群号` | 私聊解除只读，不补发旧提醒 |
 
+`schedule` 按 DDL 展示所属会话、设置者、通知对象、截止时间及所有未来 `pending` 提醒节点，不显示已发送、已取消、失败或过期节点，也不显示已取消、全部退订或无剩余提醒的 DDL。`user QQ号` 仅筛选该用户的个人会话，`group 群号` 仅筛选该群。群内 Super 也可查询全部或指定会话，结果发回当前会话；跨平台、其他机器人账号的数据不包含在内。查询不改变调度状态，实际发送仍受 Readonly 等规则约束。
+
+```text
+/super schedule
+/super schedule user 111
+/super schedule group 3333
+```
+
 费用按请求发生时配置的输入/输出单价保存，不因改价重算历史。广播仅发给曾与当前机器人私聊、有有效 autoanalysis 权限、未拒收的用户。
+
+默认广播文案保存在 UTF-8 文件 `src/UPDATE.md` 中，修改后下次 `/super announce`（或兼容入口 `/announce`）立即生效，无须修改 Python 代码或重启。文件读取失败或内容为空时停止广播并提示；`/super announce text 内容` 仍可发送自定义文字。
 
 `/send`、`/readonly list` 原本也开放给全局 admin，继续保留。旧 Super 专用 `/role list/add/remove/clear/reset/group-admin`、`/cost`、`/announce`、`/readonly add/remove` 兼容转发一个过渡版本，帮助只展示新入口。不存在独立 `/request` 命令。

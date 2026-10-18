@@ -199,8 +199,14 @@ def management_specs():
         (
             "help",
             "super_help",
-            "/super help [role|ddl|request|cost|announce|readonly]",
+            "/super help [role|ddl|schedule|request|cost|announce|readonly]",
             "分类查看管理帮助",
+        ),
+        (
+            "schedule",
+            "super_deadlines",
+            "/super schedule [user QQ号|group 群号]",
+            "查看当前机器人全部或指定会话的未来待发提醒",
         ),
         (
             "role show",

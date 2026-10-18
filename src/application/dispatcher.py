@@ -7,7 +7,7 @@ from ..domain.commands import CATALOG, LEGACY, resolve
 from ..domain.deadlines import DeadlineConfirmation
 from ..domain.errors import BusinessError, ModelError
 from ..domain.security import SecretViolation
-from ..infrastructure.onebot import ReadonlyViolation, deadline_context
+from ..infrastructure.messaging.onebot import ReadonlyViolation, deadline_context
 from ..presentation.help import render_help, render_super_help
 from ..presentation.names import NameDirectory
 
