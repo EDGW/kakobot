@@ -53,18 +53,19 @@ class Layout:
     def box(self, bounds, fill, radius=16):
         self.ops.append(("box", bounds, fill, radius))
 
-    def rich(self, value, x, available):
+    def rich(self, value, x, available, *, size=None, bold=False, color=INK):
         # Inline code and strong text retain visual emphasis without displaying
         # the Markdown delimiters. Link labels stay visible as ordinary text.
         value = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", value)
         tokens = re.split(r"(`[^`]+`|\*\*[^*]+\*\*)", value)
+        size = size or self.size
         left, y = x, self.y
-        height = round(self.size * 1.65)
+        height = round(size * 1.65)
         for token in tokens:
             code = token.startswith("`") and token.endswith("`")
             strong = token.startswith("**") and token.endswith("**")
             content = token[1:-1] if code else token[2:-2] if strong else token
-            face = font(self.size, strong)
+            face = font(size, strong or bold)
             for char in content:
                 advance = face.getlength(char)
                 if left > x and left + advance > x + available:
@@ -75,7 +76,7 @@ class Layout:
                         (left, y + 3, left + advance + 1, y + height - 3), "#EAF0FF", 0
                     )
                 self.ops.append(
-                    ("text", (left, y), char, face, ACCENT if code else INK)
+                    ("text", (left, y), char, face, ACCENT if code else color)
                 )
                 left += advance
         self.y = y + height
@@ -97,7 +98,10 @@ class Layout:
         )
         self.y += 15
         for kind, value in blocks(lines):
-            if kind == "code":
+            if kind == "heading":
+                self.y += 8
+                self.text(plain(value), inner_x, available, bold=True, color=ACCENT)
+            elif kind == "code":
                 code_top = self.y
                 code_start = len(self.ops)
                 self.y += 18
@@ -123,11 +127,11 @@ class Layout:
                 table_top = self.y
                 table_start = len(self.ops)
                 self.y += 12
-                self.text(
+                self.rich(
                     value[0], inner_x + 16, available - 32, bold=True, color=ACCENT
                 )
                 for cell in value[1:]:
-                    self.text(cell, inner_x + 16, available - 32, size=self.size - 2)
+                    self.rich(cell, inner_x + 16, available - 32, size=self.size - 2)
                 self.y += 12
                 self.ops.insert(
                     table_start,

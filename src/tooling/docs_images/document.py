@@ -82,10 +82,23 @@ def cards_for(document, location):
         title = section.title
         if section.level == 1:
             title = "概览"
-        if any(line.strip() for line in section.lines):
-            cards.append((title or "概览", section.lines))
+
+        # H4–H6 are subheadings within their parent card, not numbered cards.
+        def inline(child):
+            lines = ["", "#" * child.level + " " + child.title, "", *child.lines]
+            for nested in child.children:
+                lines.extend(inline(nested))
+            return lines
+
+        lines = list(section.lines)
         for child in section.children:
-            visit(child)
+            if child.level >= 4:
+                lines.extend(inline(child))
+        if any(line.strip() for line in lines):
+            cards.append((title or "概览", lines))
+        for child in section.children:
+            if child.level < 4:
+                visit(child)
 
     visit(selected)
     return cards
@@ -126,12 +139,16 @@ def blocks(lines):
         if not stripped:
             if item := flush():
                 yield item
+        elif re.match(r"^#{4,6}\s+", stripped):
+            if item := flush():
+                yield item
+            yield "heading", re.sub(r"^#{4,6}\s+", "", stripped)
         elif stripped.startswith("|") and stripped.endswith("|"):
             if item := flush():
                 yield item
             cells = re.split(r"(?<!\\)\|", stripped[1:-1])
             if not all(re.fullmatch(r"\s*:?-+:?\s*", cell) for cell in cells):
-                yield "table", [plain(cell.strip()) for cell in cells]
+                yield "table", [cell.strip().replace("\\|", "|") for cell in cells]
         elif re.match(r"^(?:[-*+] |\d+\. )", stripped):
             if item := flush():
                 yield item
