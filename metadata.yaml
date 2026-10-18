@@ -1,7 +1,7 @@
 name: astrbot_plugin_kakobot
 display_name: KakoBot
 desc: '群与个人 DDL、聊天总结，统一 Super 批量管理与好友/群申请审批。'
-version: v2.0.0-alpha.3
+version: v2.0.0-beta.1
 author: edgwu
 support_platforms:
   - aiocqhttp

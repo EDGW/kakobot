@@ -520,7 +520,7 @@ def test_upgrade_backup_and_prerelease_version(tmp_path):
     assert (tmp_path / "migration-backup-1.3.2" / "roles.json").is_file()
     assert (tmp_path / "migration-backup-1.3.2" / "deadlines.sqlite3").is_file()
     migrate(tmp_path)  # repeat is safe
-    assert ReleaseInfoStore().version() == "v2.0.0-alpha.3"
+    assert ReleaseInfoStore().version() == "v2.0.0-beta.1"
 
 
 @pytest.mark.asyncio
@@ -811,7 +811,9 @@ async def test_help_cards_and_aliases(service, tmp_path):
         await command(service, g, "/super group-discuss help", "4")
 
 
-@pytest.mark.parametrize("previous_version", ["2.0.0-alpha.1", "2.0.0-alpha.2"])
+@pytest.mark.parametrize(
+    "previous_version", ["2.0.0-alpha.1", "2.0.0-alpha.2", "2.0.0-alpha.3"]
+)
 def test_alpha_upgrade_preserves_state_and_queues_announcement(
     tmp_path, previous_version
 ):
