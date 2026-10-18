@@ -32,10 +32,12 @@
 ```sh
 python -m src.tooling.check
 ruff check src main.py
-python -m src.tooling.package
+make publish
 ```
 
-构建输出为 `dist/astrbot_plugin_kakobot-v版本.zip`，包含插件代码、README、docs 和中文字体，不包含 examples、工具脚本、运行数据库、密钥或本地设计草稿。GitHub 标签发布工作流沿用现有配置。
+`make publish` 先生成文档图片，成功后再校验并制作插件安装包；图片生成失败时不继续打包。此命令仅本地构建，不上传、不创建 Release，也不执行 Git push。只制作安装包时仍可运行 `python -m src.tooling.package`。
+
+构建输出为 `dist/astrbot_plugin_kakobot-v版本.zip`，包含插件代码、README、Markdown 文档和中文字体，不包含文档图片、examples、工具脚本、运行数据库、密钥或本地设计草稿。GitHub 标签发布工作流沿用现有配置。
 
 命令文档中，一个 Markdown 文件对应一组功能，在每个命令下分别说明 CHAT、GROUP 的完整格式、所需权限组和行为。参数含义、默认值、作用范围、执行结果及示例直接写在对应命令下，不另设“使用规则与示例”汇总节。普通命令放在 `docs/commands/`，Super 命令放在 `docs/commands/super/`；各目录的 README 维护功能索引。
 
@@ -44,8 +46,10 @@ python -m src.tooling.package
 安装项目依赖后，在仓库根目录运行：
 
 ```sh
-python -m src.tooling.docs_images
+make docs
 ```
+
+Makefile 默认使用 `python3`，需安装项目依赖。可用 `make docs PYTHON=.venv/bin/python` 指定解释器，或用 `make publish PYTHON="uv run --no-project --with Pillow python"` 在 uv 临时环境中构建；直接运行 `python -m src.tooling.docs_images` 也仍然支持。
 
 脚本递归读取 `docs/` 下的 Markdown，每个文件生成 CHAT 和 GROUP 两张 JPEG。输出到 `docs/pics/` 并保留源目录结构，例如 `docs/commands/ddl.md` 对应 `docs/pics/commands/ddl-chat.jpeg` 和 `docs/pics/commands/ddl-group.jpeg`；`docs/configuration.md` 对应 `docs/pics/configuration-chat.jpeg` 和 `docs/pics/configuration-group.jpeg`。
 
@@ -56,7 +60,7 @@ python -m src.tooling.docs_images
 可以自定义输入、输出、宽度和正文字号：
 
 ```sh
-python -m src.tooling.docs_images --docs docs --output docs/pics --width 1200 --font-size 25
+make docs DOCS_ARGS="--docs docs --output docs/pics --width 1200 --font-size 25"
 ```
 
 默认宽度1200像素、正文字号25像素。源目录中位于输出目录内的 Markdown 会跳过；重复运行覆盖同名图片，不清理其他文件。`docs/pics/` 为本地生成物，Git 和插件安装包均不包含这些图片；脚本只需 Pillow，不调用模型或网络。
