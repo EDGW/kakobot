@@ -36,3 +36,5 @@ python -m src.tooling.package
 ```
 
 构建输出为 `dist/astrbot_plugin_kakobot-v版本.zip`，包含插件代码、README、docs 和中文字体，不包含 examples、工具脚本、运行数据库、密钥或本地设计草稿。GitHub 标签发布工作流沿用现有配置。
+
+命令文档按 [commands/example.md](commands/example.md) 编写：一个 Markdown 文件对应一组功能，在每个命令下分别说明 CHAT、GROUP 的完整格式、所需权限组和行为。普通命令放在 `docs/commands/`，Super 命令放在 `docs/commands/super/`；各目录的 README 维护功能索引。

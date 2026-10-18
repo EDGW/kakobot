@@ -27,6 +27,7 @@
 
 ### 文档与升级
 
+- 命令文档按功能拆分至 `docs/commands/`，Super 命令单独放入 `docs/commands/super/`，逐项说明 CHAT/GROUP 格式、权限和行为。
 - 应用层按 DDL、身份组、消息和管理功能分包；基础设施区分存储与消息处理，DDL 展示集中到子包，导入和打包同步调整。
 - 默认广播文案移至 `src/UPDATE.md`，每次 `/super announce` 或 `/announce` 时读取，无须修改代码或重启。
 - 精简 README 为安装与最基本用法；普通命令、Super 管理、配置与升级、开发打包分拆到 `docs/`，随安装 ZIP 分发。
