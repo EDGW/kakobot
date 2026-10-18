@@ -39,7 +39,7 @@ def check(root):
     if root_python != {"__init__.py", "main.py"}:
         raise ValueError("根目录仍有入口以外的 Python 实现。")
     metadata = (root / "metadata.yaml").read_text(encoding="utf-8")
-    version = re.search(r"^version:\s*v([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\s*$", metadata, re.MULTILINE)
+    version = re.search(r"^version:\s*v([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+|\.(?:alpha|beta|rc)\.[0-9]+(?:\.[0-9]+)*)?)\s*$", metadata, re.MULTILINE)
     assignments = trees[root / "src/infrastructure/storage/migration.py"].body
     expected = next(
         ast.literal_eval(node.value)

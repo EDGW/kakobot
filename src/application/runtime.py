@@ -112,6 +112,14 @@ class Runtime:
         self.active = set()
         self.closing = False
 
+    def candidate(self, ctx):
+        """Single admission gate shared with transport adapters."""
+        return (
+            self.personal_discuss.candidate(ctx)
+            or self.discuss.candidate(ctx)
+            or self.dispatcher.should_handle(ctx)
+        )
+
     async def handle(self, ctx, gateway):
         if self.closing:
             return

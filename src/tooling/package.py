@@ -15,7 +15,7 @@ def main():
     check(root)
     metadata = (root / "metadata.yaml").read_text(encoding="utf-8")
     version = re.search(
-        r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\s*$",
+        r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+|\.(?:alpha|beta|rc)\.[0-9]+(?:\.[0-9]+)*)?)\s*$",
         metadata,
         re.MULTILINE,
     )

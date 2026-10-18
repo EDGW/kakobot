@@ -835,6 +835,7 @@ async def test_help_cards_and_aliases(service, tmp_path):
         "2.0.0-beta.1.3",
         "2.0.0-beta.1.4",
         "2.0.0-beta.1.5",
+        "2.0.0-beta.2.0",
     ],
 )
 def test_prerelease_upgrade_preserves_state_and_queues_announcement(
@@ -2238,3 +2239,167 @@ async def test_super_personal_default_open_without_operator_key_fallback(service
     await personal.manage_personal(ctx(), g, "switch false")
     with pytest.raises(BusinessError, match="总开关"):
         await personal.require_user(ctx(), g, scope)
+
+
+@pytest.mark.asyncio
+async def test_astrbot_adapter_admits_personal_discuss_commands(service, monkeypatch):
+    """Exercise the real adapter-to-runtime route using SDK stubs, not AstrBot."""
+    import runpy
+    import sys
+    from pathlib import Path
+    from types import ModuleType
+    from unittest.mock import AsyncMock, Mock
+
+    from src.application.group_discuss.personal import PersonalDiscussService
+    from src.application.runtime import Runtime
+
+    modules = {
+        name: ModuleType(name)
+        for name in (
+            "astrbot",
+            "astrbot.api",
+            "astrbot.api.event",
+            "astrbot.api.message_components",
+            "astrbot.api.star",
+        )
+    }
+    modules["astrbot.api.event"].filter = SimpleNamespace(CustomFilter=object)
+    modules["astrbot.api.message_components"].At = type("At", (), {})
+    modules["astrbot.api.message_components"].Plain = type("Plain", (), {})
+    modules["astrbot.api.star"].StarTools = SimpleNamespace()
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    adapter_class = runpy.run_path(
+        str(Path(__file__).resolve().parents[1] / "src/adapters/astrbot.py"),
+        run_name="src.adapters._test_astrbot",
+    )["AstrBotAdapter"]
+    runtime = Runtime.__new__(Runtime)
+    runtime.discuss = service
+    runtime.personal_discuss = PersonalDiscussService(service)
+    runtime.dispatcher = SimpleNamespace(
+        should_handle=lambda ctx: False, handle=AsyncMock()
+    )
+    runtime.guard = service.guard
+    runtime.guard.install = Mock()
+    runtime.conversations = SimpleNamespace(observe=Mock())
+    runtime.active = set()
+    runtime.closing = False
+    bot = SimpleNamespace(call_action=AsyncMock(return_value={"message_id": 101}))
+    platform = SimpleNamespace(
+        get_client=lambda: bot, meta=lambda: SimpleNamespace(id="qq", name="aiocqhttp")
+    )
+    adapter = adapter_class.__new__(adapter_class)
+    adapter.runtime = runtime
+    adapter.context = SimpleNamespace(
+        platform_manager=SimpleNamespace(get_insts=lambda: [platform])
+    )
+    adapter.routes = {}
+
+    async def send(text, message_id, reply=None):
+        event = SimpleNamespace(
+            bot=bot,
+            message_obj=SimpleNamespace(
+                raw_message={
+                    "post_type": "message",
+                    "message_id": message_id,
+                    "message": (
+                        [{"type": "reply", "data": {"id": reply}}] if reply else []
+                    )
+                    + [{"type": "text", "data": {"text": text}}],
+                }
+            ),
+            get_self_id=lambda: "9",
+            get_sender_id=lambda: "1",
+            get_group_id=lambda: "",
+            get_messages=lambda: [],
+            stop_event=Mock(),
+        )
+        await adapter._handle_message(event)
+        event.stop_event.assert_called_once()
+        return bot.call_action.await_args.kwargs["message"]
+
+    # No registered slash command or autoanalysis eligibility is needed.
+    assert "8～512" in str(await send("/discuss apikey = sk-", "adapter-invalid-key"))
+    assert not service.store.secret(scope_key(ctx()))
+    reply = await send("/discuss apikey = sk-adapter-test-abcdef", "adapter-valid-key")
+    assert "已保存个人 API Key" in str(reply)
+    assert "sk-adapter-test-abcdef" not in str(reply)
+    assert service.store.secret(scope_key(ctx())) == "sk-adapter-test-abcdef"
+    assert "已开启" in str(await send("/super discuss enable 2", "adapter-enable-user"))
+    assert service.store.group(scope_key(ctx("2")))["enabled"]
+    session = service.store.create_session(scope_key(ctx()), "1", 1)
+    service.store.map_message(scope_key(ctx()), "adapter-old-answer", session)
+    runtime.personal_discuss.chat = AsyncMock()
+    await send("继续", "adapter-followup", reply="adapter-old-answer")
+    runtime.personal_discuss.chat.assert_awaited_once()
+    runtime.dispatcher.handle.assert_not_awaited()
+    assert not service.guard.errors
+
+
+@pytest.mark.asyncio
+async def test_personal_plain_messages_replace_autoanalysis_until_key_removed(service):
+    from unittest.mock import AsyncMock, Mock
+
+    from src.application.group_discuss.personal import PersonalDiscussService
+    from src.application.runtime import Runtime
+
+    g = Gateway()
+    personal = PersonalDiscussService(service)
+    runtime = Runtime.__new__(Runtime)
+    runtime.personal_discuss, runtime.discuss = personal, service
+    runtime.dispatcher = SimpleNamespace(
+        should_handle=lambda c: not c.group and not c.text.startswith("/"),
+        handle=AsyncMock(),
+    )
+    runtime.conversations = SimpleNamespace(observe=Mock())
+    runtime.active, runtime.closing = set(), False
+    scope = scope_key(ctx())
+    await runtime.handle(ctx(text="旧自动分析", message="auto-before-key"), g)
+    assert runtime.dispatcher.handle.await_count == 1
+    notice = await personal.user_command(ctx(), g, "apikey = sk-private-plain-abcdef")
+    assert "autoanalysis" in notice and "/discuss apikey clear" in notice
+    requests = []
+
+    async def handler(request):
+        assert request.headers["authorization"] == "Bearer sk-private-plain-abcdef"
+        payload = json.loads(request.content)
+        requests.append(payload)
+        return httpx.Response(200, json=response(answer("已记住")))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    for number, text in enumerate(
+        ["我的计划是学习物理", "每天学习两小时", "请结合前面内容安排时间"]
+    ):
+        context = ctx(text=text, message=f"plain-{number}")
+        assert runtime.candidate(context)
+        await runtime.handle(context, g)
+    assert runtime.dispatcher.handle.await_count == 1
+    assert len(requests) == 3
+    assert "我的计划是学习物理" in json.dumps(requests[-1]["input"], ensure_ascii=False)
+    assert "每天学习两小时" in json.dumps(requests[-1]["input"], ensure_ascii=False)
+    old = service.store.sessions(scope)[0]["id"]
+    await runtime.handle(ctx(text="/new", message="plain-new"), g)
+    assert service.store.session(scope, old)["ended"] is not None
+    assert len(requests) == 3
+    await runtime.handle(ctx(text="新的话题", message="plain-after-new"), g)
+    assert "学习物理" not in json.dumps(requests[-1]["input"], ensure_ascii=False)
+    assert len(requests) == 4
+
+    # Provider rejection stays in discuss, never falls through to the global AI.
+    async def failed(request):
+        return httpx.Response(
+            401,
+            json={"error": {"message": "invalid key", "type": "authentication_error"}},
+        )
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(failed))
+    await runtime.handle(ctx(text="失败也不转发", message="plain-failure"), g)
+    assert runtime.dispatcher.handle.await_count == 1
+    await runtime.handle(
+        ctx(text="/discuss apikey clear", message="plain-clear-key"), g
+    )
+    assert not personal.candidate(ctx(text="恢复自动分析"))
+    await runtime.handle(ctx(text="恢复自动分析", message="auto-after-key"), g)
+    assert runtime.dispatcher.handle.await_count == 2

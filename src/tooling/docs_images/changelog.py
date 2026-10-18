@@ -12,7 +12,7 @@ def render_changelog(source, output, *, width=1200, size=25):
     # belong under one visible title while the on-disk source stays untouched.
     text = re.sub(r"^# 更新日志\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(
-        r"^# (Dev|v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*$",
+        r"^# (Dev|v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+|\.(?:alpha|beta|rc)\.[0-9]+(?:\.[0-9]+)*)?)\s*$",
         r"## \1",
         text,
         flags=re.MULTILINE,

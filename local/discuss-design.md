@@ -475,3 +475,6 @@ Chromium 及系统依赖由管理员手动安装，插件不自动下载、安�
 个人 /discuss 的文档独立位于 docs/commands/discuss，群文档仍位于 docs/commands/group-discuss。个人总开关 discuss.enabled 默认 true，全局 Super 默认开放，其他用户须由 Super 单独开启，显式关闭覆盖默认开放。所有人包括 Super 均须设置自己的 DeepSeek Key；个人回答、摘要和联网都不得回退到群或全局 AI Key。
 
 个人按平台、机器人、CHAT、用户隔离，与群共用底层账本及全局资源限制，固定一个活动会话。execute_commands 在私聊每轮可用、群聊仅首轮可用；私聊每轮最多 5 条不同命令，同轮相同文本去重，后续轮次可重新执行。个人不开放群数据查询和群角色准入；预算、模型、思考强度、提示词、工具由全局 Super 管理，用户只管理自己的 Key 和会话。
+
+
+个人 discuss 已开放且配置个人 Key 后接管普通私聊，不再交给 autoanalysis；每条输入延续当前上下文，压缩保留摘要，/new 关闭上下文并开启新话题。移除 Key 恢复原 autoanalysis 分发，仍须原权限与开关允许。设置 Key 的成功提示须告知上述切换及 DDL 工具依赖。

@@ -22,11 +22,11 @@
 
 #### 第二步：用户自己设置 Key
 
-用户在私聊执行，Super 也需要自己的 Key。默认使用通用模型默认值；该值为空时使用允许模型列表的第一项，初始为 deepseek-v4-flash。无需配置全局总结/DDL 的 AI Key。
+用户在私聊执行，Super 也需要自己的 Key。默认使用通用模型默认值；该值为空时使用允许模型列表的第一项，初始为 deepseek-v4-flash。无需配置全局总结/DDL 的 AI Key。Key 设置完成后普通私聊自动进入 discuss 并积累上下文，不再走 autoanalysis；清除 Key 后恢复原有 autoanalysis 分发。
 
 ```text
 /discuss apikey = sk-REPLACE-WITH-YOUR-KEY
-/discuss 你好
+你好
 /discuss status
 ```
 

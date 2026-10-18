@@ -1,5 +1,7 @@
 # 私聊自动分析 命令组
 
+个人 discuss 已开放且设置个人 Key 时，普通私聊优先进入 discuss，不再交给本功能。discuss 可在业务命令工具已允许且用户具备 ddl 权限时完成 DDL 操作。使用 `/discuss apikey clear` 移除个人 Key 后恢复本功能的原有分发，仍须满足下述权限与开关。
+
 [命令目录](README.md) · [Super 管理](super/README.md)
 
 本组涉及以下身份组：

@@ -53,10 +53,10 @@ jobs:
           from pathlib import Path
 
           tag = os.environ["RELEASE_TAG"]
-          if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", tag) is None:
-              raise SystemExit("Version tags must use vMAJOR.MINOR.PATCH with an optional prerelease suffix.")
+          if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+|\.(?:alpha|beta|rc)\.[0-9]+(?:\.[0-9]+)*)?", tag) is None:
+              raise SystemExit("Version tags must use vMAJOR.MINOR.PATCH, optionally followed by a hyphen prerelease or .beta.N suffix.")
           metadata = Path("metadata.yaml").read_text(encoding="utf-8")
-          version = re.search(r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\s*$", metadata, re.MULTILINE)
+          version = re.search(r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+|\.(?:alpha|beta|rc)\.[0-9]+(?:\.[0-9]+)*)?)\s*$", metadata, re.MULTILINE)
           if version is None or version[1] != tag:
               raise SystemExit("Version tag and metadata.yaml version must match.")
           changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")

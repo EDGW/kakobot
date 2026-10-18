@@ -2,7 +2,7 @@
 
 [命令目录](../README.md) · [普通帮助](help.md) · [Super 管理](super.md)
 
-个人 `/discuss` 仅用于私聊，与群 `/group-discuss` 分别管理入口、Key、历史、用户预算和工具权限。默认对全局 Super 开放，其他用户须由 Super 单独开启；每位用户都须配置自己的 DeepSeek Key。
+个人 `/discuss` 仅用于私聊，与群 `/group-discuss` 分别管理入口、Key、历史、用户预算和工具权限。默认对全局 Super 开放，其他用户须由 Super 单独开启；每位用户都须配置自己的 DeepSeek Key。配置后普通私聊由 discuss 接管，连续积累上下文；/new 开始新话题，清除 Key 后恢复原 autoanalysis 分发。
 
 - [帮助、Key 与会话](help.md)
 - [个人配置与常用设置](configuration.md)

@@ -1,1 +1,1 @@
-KakoBot beta.2.0：新增私聊 /discuss，Super 默认开放，其他用户须授权；请用 /discuss apikey = KEY 自备 DeepSeek Key。支持受控批量业务命令：私聊每轮、群聊仅首轮。个人与群文档、帮助卡片分别提供，保留原有数据与配置。
+KakoBot v2.0.0.beta.2：修复 /discuss 入口。设置个人 Key 后普通私聊自动进入 discuss 并保留上下文，用 /new 换话题；清除 Key 后恢复原 autoanalysis。DDL 操作需开放业务工具及原权限，升级保留数据。

@@ -97,6 +97,8 @@ class PersonalDiscussService(DiscussService):
         parts = ctx.text.strip().split(maxsplit=2)
         if parts and parts[0].lower() == "/discuss":
             return False, ctx.text.strip()[len(parts[0]) :].strip()
+        if parts and parts[0].lower() == "/new":
+            return False, "new " + ctx.text.strip()[len(parts[0]) :].strip()
         if len(parts) > 1 and [p.lower() for p in parts[:2]] == ["/super", "discuss"]:
             return True, parts[2] if len(parts) > 2 else "help"
         return None
@@ -106,12 +108,12 @@ class PersonalDiscussService(DiscussService):
             return False
         if self.command(ctx) is not None:
             return True
-        return not ctx.text.lstrip().startswith("/") and any(
-            p.get("type") == "reply"
-            and self.store.message_session(
-                scope_key(ctx), str((p.get("data") or {}).get("id", ""))
-            )
-            for p in ctx.segments
+        scope = scope_key(ctx)
+        return (
+            not ctx.text.lstrip().startswith("/")
+            and self.enabled
+            and self.access_enabled(scope)
+            and bool(self.store.secret(scope))
         )
 
     async def _handle(self, ctx, gateway):
@@ -173,7 +175,7 @@ class PersonalDiscussService(DiscussService):
             if tail == "clear":
                 self.store.set_secret(scope, ctx.actor, "")
                 self.store.end(scope, "all", "用户清除 API Key", ctx.actor)
-                return "已清除个人 API Key 并结束会话。"
+                return "已清除个人 API Key 并结束会话。普通私聊已恢复原 autoanalysis 分发，仍须满足原有权限和开关。"
             if not tail.startswith("="):
                 raise BusinessError(
                     "用法：/discuss apikey = sk-XXX；或 apikey show|clear"
@@ -186,7 +188,12 @@ class PersonalDiscussService(DiscussService):
             self.guard.secrets.register(key)
             self.store.set_secret(scope, ctx.actor, key)
             self.store.end(scope, "all", "用户更换 API Key", ctx.actor)
-            return "已保存个人 API Key，密钥不回显；之后的请求仅使用此 Key。"
+            return (
+                "已保存个人 API Key，密钥不回显；之后的 discuss 请求仅使用此 Key。\n"
+                "普通私聊现在由 discuss 接管，不再使用 autoanalysis；每句话自动加入当前会话上下文。\n"
+                "discuss 可通过业务命令工具代替 DDL 自动分析；须由 Super 开启 tools.execute_commands，且你拥有 ddl 权限。\n"
+                "用 /new 开始新话题；用 /discuss apikey clear 移除 Key 后可继续使用 autoanalysis（须满足原权限与开关）。"
+            )
         if word == "status" and not tail.strip():
             await self.show_config(ctx, gateway, scope)
             return json.dumps(
@@ -202,9 +209,9 @@ class PersonalDiscussService(DiscussService):
             return "个人会话已结束，使用 /discuss 内容 开始新会话。"
         await self.require_user(ctx, gateway, scope)
         if word == "new":
-            if not tail.strip():
-                raise BusinessError("用法：/discuss new 问题内容")
             self.store.end(scope, "all", "用户新建会话", ctx.actor)
+            if not tail.strip():
+                return "已结束旧上下文，下一条私聊将开启新会话；每日已用额度保留。"
             raw = tail.strip()
             ctx = replace(ctx, segments=[])
         await self.chat(replace(ctx, text=raw), gateway, scope)

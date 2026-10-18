@@ -20,7 +20,7 @@ class ReleaseInfoStore:
                 "无法读取当前安装版本，请联系 Super 检查 metadata.yaml。"
             ) from exc
         match = re.search(
-            r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\s*$", metadata, re.MULTILINE
+            r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+|\.(?:alpha|beta|rc)\.[0-9]+(?:\.[0-9]+)*)?)\s*$", metadata, re.MULTILINE
         )
         if match is None:
             raise BusinessError(

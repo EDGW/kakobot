@@ -312,10 +312,7 @@ class AstrBotAdapter:
         platform_id = self.platform_id(matches[0])
         ctx = incoming(event, platform_id)
         self.routes[(platform_id, ctx.bot)] = event.bot
-        if not (
-            self.runtime.dispatcher.should_handle(ctx)
-            or self.runtime.discuss.candidate(ctx)
-        ):
+        if not self.runtime.candidate(ctx):
             self.runtime.observe(ctx)
             return
         if await self.runtime.handle(

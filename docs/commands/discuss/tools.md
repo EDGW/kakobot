@@ -16,6 +16,10 @@
 
 上述初始开关继承通用 defaults，Super 可修改默认值和用户覆盖。个人入口不提供 `query_group_data`，不能通过参数访问其他用户或群会话。
 
+## 代替 autoanalysis
+
+设置个人 Key 后普通私聊由 discuss 接管。要让 discuss 自动完成创建个人 DDL 等原 autoanalysis 工作，Super 须允许 tools.execute_commands，用户仍须具有 ddl 权限；仅设置 Key 不会自动授予业务工具或创建权限。移除个人 Key（`/discuss apikey clear`）即可恢复原 autoanalysis 分发，前提是原有身份和开关允许。
+
 ## 业务命令：私聊每轮可用
 
 资格、执行身份和权限均由程序判定，AI 仅提交 commands 列表。私聊每轮都可执行，不要求是会话首轮。支持同一批顺序执行多条命令，每条独立检查权限、返回状态；执行范围固定为当前用户的私聊。
