@@ -51,7 +51,7 @@ make docs
 
 Makefile 默认使用 `python3`，需安装项目依赖。可用 `make docs PYTHON=.venv/bin/python` 指定解释器，或用 `make publish PYTHON="uv run --no-project --with Pillow python"` 在 uv 临时环境中构建；直接运行 `python -m src.tooling.docs_images` 也仍然支持。
 
-脚本递归读取 `docs/` 下的功能 Markdown，跳过 README、configuration、development（文件名不区分大小写），每个功能文件生成 CHAT 和 GROUP 两张 JPEG。额外将根目录 `CHANGELOG.md` 生成独立的 `docs/pics/changelog.jpeg`，用于 `/changelog`，不按会话生成重复日志图片。输出到 `docs/pics/` 并保留源目录结构，例如 `docs/commands/ddl.md` 对应 `docs/pics/commands/ddl-chat.jpeg` 和 `docs/pics/commands/ddl-group.jpeg`。
+脚本递归读取 `docs/` 下的功能 Markdown，跳过 README、configuration、development（文件名不区分大小写；group-discuss/configuration.md 作为帮助专题保留），每个功能文件生成 CHAT 和 GROUP 两张 JPEG。额外将根目录 `CHANGELOG.md` 生成独立的 `docs/pics/changelog.jpeg`，用于 `/changelog`，不按会话生成重复日志图片。输出到 `docs/pics/` 并保留源目录结构，例如 `docs/commands/ddl.md` 对应 `docs/pics/commands/ddl-chat.jpeg` 和 `docs/pics/commands/ddl-group.jpeg`。
 
 标题以 `- CHAT` 或 `- GROUP` 结尾的段落只出现在对应会话图片中，整段内容及下级段落一同筛选。公共说明保留在两张图中；某个会话没有命令入口时显示不可用提示。没有会话标记的功能文档生成两份相同正文，页头分别标注会话类型。
 
@@ -63,7 +63,7 @@ Makefile 默认使用 `python3`，需安装项目依赖。可用 `make docs PYTH
 make docs DOCS_ARGS="--docs docs --output docs/pics --width 1200 --font-size 25"
 ```
 
-默认宽度1200像素、正文字号25像素。源目录中位于输出目录内的 Markdown 会跳过；重复运行覆盖同名图片，并移除 README、configuration、development 之前生成的图片，保留其他文件。`docs/pics/` 不加入 Git；发布安装包按当前功能文档清单包含对应 JPEG，不夹带过期页面。脚本只需 Pillow，不调用模型或网络。
+默认宽度1200像素、正文字号25像素。生成前先完整清空输出目录（默认 docs/pics/），再重新生成全部图片，不保留任何旧输出。自定义输出目录也会清空；若输出目录包含源 Markdown 或为源目录的上级，脚本拒绝执行，避免删除源文档。`docs/pics/` 不加入 Git；发布安装包按当前功能文档清单包含对应 JPEG，不夹带过期页面。脚本只需 Pillow，不调用模型或网络。
 ## 图片帮助的运行链路
 
 `application/messaging/help.py` 根据功能组和当前会话位置请求 `infrastructure/messaging/help_images.py` 读取安装目录下的 `docs/pics/commands/功能组-chat.jpeg` 或 `功能组-group.jpeg`；Super 页面位于同目录的 `super/` 子目录。未指定功能组时使用 help，`/super` 等同于 `/super help`。

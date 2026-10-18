@@ -40,7 +40,7 @@ Super 使用 `/super help` 管理身份组、各用户和各群的 DDL、好友�
 
 - [普通命令与 DDL](docs/commands/README.md)：创建、提醒规则、自动分析、总结。
 - [Super 管理](docs/commands/super/README.md)：批量身份组、跨会话 DDL、申请审批与其他管理命令。
-- [群 AI 对话](docs/group-dicsuss/README.md)：独立权限、会话、预算和受控工具；`/group-discuss help`。
+- [群 AI 对话](docs/commands/group-discuss/README.md)：独立权限、会话、预算和受控工具；`/group-discuss help`。
 - [配置与升级](docs/configuration.md)：配置项、存储、日志和运行约定。
 - [开发与打包](docs/development.md)：代码结构、本地检查与 ZIP 构建。
 

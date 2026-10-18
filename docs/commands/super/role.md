@@ -7,6 +7,7 @@
 - `super`：管理权限。
 - `admin`、`autoanalysis`、`ddl`、`summary`：可管理的全局组。
 - `group.admin`、`group.ddl`、`group.summary`：按群管理的身份组。
+- `group.discuss.super`、`group.discuss.admin`、`group.discuss.user`：按平台、机器人和群管理的 AI 对话身份组。
 
 仅配置项 `super_user` 指定的账号可使用；通用约定见 [Super 目录](README.md)。
 
@@ -80,7 +81,7 @@
 
 按身份组、群和权限来源筛选用户，省略 ROLE 时列出查询范围内有有效授权的用户。
 
-`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary`，仅代表当前群。
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary` 或 `group.discuss.super`、`group.discuss.admin`、`group.discuss.user`，仅代表当前群。
 
 - `--group 群号`：仅保留该群实际成员，并查询该群角色；与 ROLE 中的群号同时出现时须一致。 群内只能指定本群，省略时默认本群。
 - `--source direct`：匹配直接授权来源。
@@ -124,7 +125,7 @@ QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整�
 
 为列表中的每个用户添加列表中的每项直接授权，保留其所有其他授权。已持有的直接授权不会重复添加。
 
-`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary`，仅代表当前群。
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary` 或 `group.discuss.super`、`group.discuss.admin`、`group.discuss.user`，仅代表当前群。
 
 QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整数。配置的 `super` 可查询，不能通过命令授予、移除或覆盖。
 
@@ -166,7 +167,7 @@ QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整�
 
 例如用户经 admin 继承 ddl，仅移除 ddl 的直接授权后，仍然拥有有效 ddl；若要撤销该权限，须处理产生继承的授权来源。
 
-`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary`，仅代表当前群。
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary` 或 `group.discuss.super`、`group.discuss.admin`、`group.discuss.user`，仅代表当前群。
 
 QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整数。配置的 `super` 可查询，不能通过命令授予、移除或覆盖。
 
@@ -206,7 +207,7 @@ QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整�
 
 将每个指定用户在单一范围内的全部直接授权替换为 ROLE 列表，范围之外保持原样。与 add 不同，未出现在列表中的原直接授权会被移除。
 
-`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary`，仅代表当前群。
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary` 或 `group.discuss.super`、`group.discuss.admin`、`group.discuss.user`，仅代表当前群。
 
 `--scope` 必填：`global` 表示全局，`group:群号` 表示单个群；ROLE 必须全部属于该范围，不允许混入全局和群角色。 群内还可用 `--scope group` 表示本群，不得指定其他群。
 
@@ -268,7 +269,7 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 
 群号必填，多个群用英文逗号分隔，最多100群。
 
-`--roles` 省略时清空 group.admin、group.ddl、group.summary 三种直接授权；提供时只清空列出的角色，使用英文逗号分隔。roles 使用 `group.ddl` 这样的名称。
+`--roles` 省略时清空全部六种群直接授权（含 group.discuss.super/admin/user）；提供时只清空列出的角色，使用英文逗号分隔。roles 使用 `group.ddl` 这样的名称。
 
 不改变全局授权、不关闭全员 group.admin 模式，也不取消现有 DDL；其他继承或全员模式仍可能让用户保持有效权限。
 
@@ -288,7 +289,7 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 
 群号可省略，默认本群；显式群号也只能是本群。
 
-`--roles` 省略时清空 group.admin、group.ddl、group.summary 三种直接授权；提供时只清空列出的角色，使用英文逗号分隔。roles 使用 `group.ddl` 这样的名称。
+`--roles` 省略时清空全部六种群直接授权（含 group.discuss.super/admin/user）；提供时只清空列出的角色，使用英文逗号分隔。roles 使用 `group.ddl` 这样的名称。
 
 不改变全局授权、不关闭全员 group.admin 模式，也不取消现有 DDL；其他继承或全员模式仍可能让用户保持有效权限。
 
@@ -343,3 +344,15 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 /super role group-admin on --dry-run
 /super role group-admin off
 ```
+
+## discuss 统一身份管理
+
+支持 `group.discuss.super`、`group.discuss.admin`、`group.discuss.user`；私聊编码为 `群号.discuss.super`、`群号.discuss.admin`、`群号.discuss.user`。继承 super → admin → user，独立于 group.admin。按当前平台、机器人账号和群隔离，专用 discuss 命令共用同一份授权。
+
+```text
+/super role add 10002 123456.discuss.admin
+/super role remove 10002 123456.discuss.admin
+/super role list 123456.discuss.super
+```
+
+上述管理命令须全局 super，普通用户通过 `/role` 查看自身。all/blacklist 模式影响有效 user，直接白名单授权与有效权限分别展示。黑名单不能撤销管理身份继承；全员 group.admin 不授予 discuss。clear/set/reset 同样覆盖目标范围的 discuss 直接授权，不清空 discuss 黑名单和准入模式。

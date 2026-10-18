@@ -42,12 +42,11 @@ def system_defaults():
     return {
         "defaults": copy.deepcopy(DEFAULTS),
         "maxima": copy.deepcopy(MAXIMA),
-        "tool_enabled": dict.fromkeys(TOOLS, False),
+        "tool_enabled": dict.fromkeys(TOOLS, True),
         "allowed_models": [],
         "allowed_efforts": ["low", "medium", "high"],
         "allowed_user_modes": ["whitelist", "all", "blacklist"],
-        "api_address": "",
-        "search_api_key": "",
+        "api_address": "https://api.deepseek.com",
         "global_daily_token_budget": 5000000,
         "request_timeout": 180,
         "model_timeout": 90,
@@ -150,11 +149,6 @@ def validate_system(policy):
             or parsed.fragment
         ):
             raise BusinessError("模型地址须为无认证、查询及片段的 HTTPS 地址。")
-    if (
-        not isinstance(policy["search_api_key"], str)
-        or len(policy["search_api_key"]) > 512
-    ):
-        raise BusinessError("搜索密钥格式错误。")
     for key, value in policy["defaults"].items():
         # Empty model is intentionally not ready; global tool switches may override defaults.
         if key == "model_name" and value == "":

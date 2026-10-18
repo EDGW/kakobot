@@ -1,6 +1,6 @@
 # 群内 AI 讨论功能设计
 
-状态：v2.0.0-alpha.1 设计与实现约定。本文记录已确认需求，并为未明确的行为给出可实施的默认方案。
+状态：v2.0.0-alpha.2 设计与实现约定。本文记录已确认需求，并为未明确的行为给出可实施的默认方案。
 
 ## 1. 目标与边界
 
@@ -9,7 +9,7 @@
 - 支持模型通过受控工具查询业务数据、搜索互联网、读取网页；不提供电脑控制、终端、任意代码执行、任意文件读写能力。
 - 配置、权限、会话、预算和统计按群隔离，与已有总结、DDL 等功能分别管理。
 - 全局 `super` 拥有最高管控权，任何群配置、名单或群管理员均不能撤销、阻断其管理权限。
-- 按本方案实现，并使用 make publish 打包 v2.0.0-alpha.1；推送功能分支，不创建 Release。
+- 按本方案实现，并使用 make publish 打包 v2.0.0-alpha.2；推送功能分支，不创建 Release。
 
 ## 2. 隔离范围
 
@@ -144,11 +144,11 @@ DeepSeek Responses 地址由系统配置确定，只允许全局 super 管理，
 | 单工具每轮调用 | 3 | 8 |
 | 全工具每轮调用 | 5 | 12 |
 
-运行初始值：每轮总时限 180 秒、单模型调用 90 秒、每轮最多模型调用 8 次（包含摘要和重试）；单群并发 2、全局并发 6；单群等待 10、全局等待 30；工具超时 20 秒、单工具正文最多 3000 tokens、网页下载最多 2 MiB、最多 3 次重定向；正文保留 30 天。数值 token 预算采用 UTF-8 字节保守估算，实际计量以端点 usage 为准。
+运行初始值：每轮总时限 180 秒、单模型调用 90 秒、每轮最多模型调用 8 次（包含摘要和重试）；单群并发 2、全局并发 6；单群等待 10、全局等待 30；工具超时 20 秒、单工具正文最多 3000 tokens、DeepSeek 工具响应最多 2 MiB（网页访问由 DeepSeek Fetch 服务完成）；正文保留 30 天。数值 token 预算采用 UTF-8 字节保守估算，实际计量以端点 usage 为准。
 
 增加全机器人每日 token 总预算，初始 5000000；与各群每日预算同时预留和扣减，由全局 super 调整，不能通过增加群数绕过。按平台和机器人账号分别统计总预算。
 
-工具系统及群开关初始均关闭。模型白名单和 DeepSeek Responses 地址初始留空，由全局 super 明确配置后才可调用，思考强度默认 low，以目标模型实际支持为前提。
+工具系统总开关初始全部开启，各群工具开关初始全部关闭。DeepSeek Responses 默认地址 https://api.deepseek.com；模型白名单初始留空，由全局 super 配置后才可调用，思考强度默认 low，以目标模型实际支持为前提。
 
 ### 5.4 查看与凭据保护
 
@@ -166,7 +166,7 @@ DeepSeek Responses 地址由系统配置确定，只允许全局 super 管理，
 
 - 会话预算和每日预算均累计实际模型 `input_tokens + output_tokens`，包括工具循环、摘要和重复发送历史的输入。
 - 思考 tokens 若已包含在 output 中不重复相加；缓存输入仍计入 token 预算，折扣只影响费用估算。
-- 搜索等外部工具自身的收费独立统计；其结果送回模型产生的输入 tokens 纳入模型预算。
+- 搜索/Fetch 工具调用次数独立统计，费用按 DeepSeek 的工具计费规则由同群 Key 提供者承担；其结果送回模型产生的输入 tokens 纳入模型预算，token 预算不限制工具账单金额。
 - 同一请求消耗同时记入会话和群当日账本，各记一次；工具循环中的每次模型调用有独立唯一请求 ID。
 - 日界线固定 Asia/Shanghai 的 00:00；跨日请求按每次模型调用开始时的日期归账，实际返回时结算到原日期。
 - 结束、删除会话或重启不能重置已用预算；每日额度耗尽后当日暂停新模型调用，次日可恢复尚未结束的会话。
@@ -222,7 +222,7 @@ DeepSeek Responses 地址由系统配置确定，只允许全局 super 管理，
 
 - `query_group_data` 仅使用固定只读查询接口，作用域和操作者由宿主程序注入，不接受模型指定任意群或任意 SQL。
 - `read_session_history` 只读取当前会话，不允许指定其他会话绕过隔离。
-- 网络工具只允许 HTTP(S)，阻止本机、内网、链路本地及云元数据地址；校验 DNS 解析、实际连接和每次重定向，防止重绑定与跳转绕过。
+- 网页 URL 只允许无认证的 HTTP(S)，拒绝本地 IP、localhost 等地址。Fetch 在 DeepSeek 服务端运行，DNS、重定向及实际连接的安全策略由供应商执行，本机不抓取网页。
 - 限制响应大小、网页片段、超时、重定向次数和每次查询返回条数，不继承本机 cookies 或登录状态。
 - 工具参数用显式 schema 校验。实际执行即占用次数，执行失败也计数；模型并行返回的调用必须逐个原子预占次数。
 - 传给模型的工具描述只包含当前允许的工具。达到调用上限后返回简短受控结果，尝试在剩余预算内生成最终回答；模型轮数限制阻止反复请求已禁用工具。
@@ -339,13 +339,12 @@ src/domain/group_discuss/             # 配置约束、权限规则、会话状�
 src/application/group_discuss/        # 触发、命令、配置管理、harness、压缩、统计
 src/infrastructure/group_discuss/     # DeepSeek 客户端、工具实现、存储适配器
 src/presentation/group_discuss/       # 帮助、设置与统计展示
-docs/group-dicsuss/                   # 按需求保留此目录拼写
+docs/commands/group-discuss/                   # 独立命令文档子目录
   README.md                          # 功能入口、触发与会话语义
   help.md                            # /group-discuss help
   configuration.md                   # 群设置、默认值、系统约束
   roles.md                           # 身份与三种 user 模式
   super.md                           # /super group-discuss
-  group-super.md                     # /group-discuss super
   admin.md                           # /group-discuss admin
   tools.md                           # 工具与能力边界
   statistics.md                      # 预算与统计口径
@@ -396,3 +395,13 @@ local/discuss-design.md               # 本设计稿
 本群 group.discuss.admin、继承 admin 的群 super，以及全局 super，可私聊执行 `config set GROUP system_prompt "提示词"`，通过 show 查看、reset 恢复系统默认。系统 `system_prompt_max_chars` 初始 4000；过长或空白文本拒绝，系统上限收紧后超限的已有提示词暂停调用并提示修改，不静默截断。
 
 每次模型请求（包括摘要）由程序将群系统提示词放入 instructions。普通用户输入默认不可信，仅在 user role 以结构化数据提供；引用、历史、摘要和工具结果也不能提升为系统规则。角色、预算、工具能力由程序强制校验，群提示词不能改变这些限制。提示词约束不是关键词检测器，不声称能保证模型绝不产生不当内容。
+
+
+## alpha.2 补充：统一角色、图片帮助和 DeepSeek 联网
+
+- 三种 discuss 身份纳入 /role、/super role，与专用身份命令共用 roles.json，按平台/机器人/群隔离。继承关系和全局 super 最终控制权保持有效。旧 JSON 自动备份升级，旧 SQLite 授权合并后删除，黑名单保留在 discuss。
+- 文档统一在 docs/commands/group-discuss，admin 和 group-super 文档合并为 admin.md，但权限等级独立。所有 help 使用现有 CHAT/GROUP JPEG，支持 /help group-discuss、/help group-discuss-admin 和 /super help group-discuss。
+- 根据 DeepSeek 官方兼容表，deepseek-v4-pro 使用 Responses web_search，deepseek-flash 与未知模型使用 /v1/tools/search 和 /v1/tools/fetch。未配置第三方搜索，不借用运营者 Key；模型与工具全由同群 API Key 付费。
+- 内置搜索包含网页访问，只有 search_web/fetch_webpage 两者都启用且有剩余额度时注册。官方忽略 max_tool_calls，响应内可能越过次数上限，只能记录返回动作并阻止后续调用；独立接口逐次执行前硬限次。
+- 每轮 summary 输出实际搜索/网页来源：内置、外置（DeepSeek 独立接口）、两者或未使用，不将工具计费伪装成模型 token。
+- 本次使用 make publish 打包 v2.0.0-alpha.2，commit 和 push，不创建 GitHub Release/pre-release；旧版 changelog 不变。

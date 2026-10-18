@@ -1,10 +1,11 @@
 """CLI for rendering every docs Markdown file into CHAT and GROUP JPEGs."""
 
 import argparse
+import shutil
 from pathlib import Path
 
 from .changelog import render_changelog
-from .document import EXCLUDED_STEMS, cards_for, documentation_files, parse_document
+from .document import cards_for, documentation_files, parse_document
 from .render import render_document
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -40,15 +41,16 @@ def main():
     files = documentation_files(source, output)
     if not files:
         parser.error("源目录中没有可生成图片的功能文档。")
-    # Remove only previously generated excluded pages, preserving other output.
-    for path in sorted(source.rglob("*.md")):
-        if path.is_relative_to(output) or path.stem.lower() not in EXCLUDED_STEMS:
-            continue
-        relative = path.relative_to(source)
-        for location in ("chat", "group"):
-            (output / relative.parent / f"{relative.stem}-{location}.jpeg").unlink(
-                missing_ok=True
-            )
+    # A complete rebuild must not retain images from deleted or moved pages.
+    if source.is_relative_to(output) or any(
+        path.is_relative_to(output) for path in source.rglob("*.md")
+    ):
+        parser.error("输出目录不能包含源文档，拒绝清理。")
+    if output.exists():
+        if not output.is_dir():
+            parser.error("输出路径必须是目录。")
+        shutil.rmtree(output)
+    output.mkdir(parents=True, exist_ok=True)
     count = 0
     for path in files:
         document = parse_document(path.read_text(encoding="utf-8"))

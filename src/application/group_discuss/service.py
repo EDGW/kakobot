@@ -5,7 +5,6 @@ import copy
 import json
 import shlex
 from dataclasses import replace
-from pathlib import Path
 
 from ...domain.context import qq_id
 from ...domain.errors import BusinessError
@@ -19,12 +18,11 @@ from ...domain.group_discuss.config import (
 )
 from ...domain.security import SecretViolation
 from ...infrastructure.group_discuss.store import DiscussStore, scope_key
+from ...infrastructure.messaging.help_images import HelpImageStore
 from ...infrastructure.messaging.onebot import ReadonlyViolation
 from ...infrastructure.storage.json_store import atomic_json, read_json
 from ...presentation.group_discuss.output import usage_footer
 from .harness import Turn, run_turn
-
-DOCS = Path(__file__).resolve().parents[3] / "docs/group-dicsuss"
 
 
 class DiscussService:
@@ -32,14 +30,29 @@ class DiscussService:
         self.store = DiscussStore(directory)
         self.system_config, self.roles, self.guard = config, roles, guard
         self.http, self.deadlines = http, deadlines
+        self.images = HelpImageStore()
+        self._migrate_roles()
+        self.roles.discuss_policy = lambda scope, user: (
+            (
+                self.config(scope)["user_mode"]
+                if self.config(scope)["user_mode"] in self.policy["allowed_user_modes"]
+                else "disabled"
+            ),
+            self.store.role(scope, "blacklist", user),
+        )
         self.policy_path = directory / "group_discuss_policy.json"
         self.policy = system_defaults()
-        self.policy.update(copy.deepcopy(config.get("group_discuss", {})))
+        deployed = copy.deepcopy(config.get("group_discuss", {}))
+        deployed.pop("search_api_key", None)
+        deployed.pop("search_provider", None)
+        self.policy.update(deployed)
         # Command changes are a durable override of the deployment defaults.
         if self.policy_path.exists():
-            self.policy.update(read_json(self.policy_path))
+            saved = read_json(self.policy_path)
+            saved.pop("search_api_key", None)
+            saved.pop("search_provider", None)
+            self.policy.update(saved)
         validate_system(self.policy)
-        self.policy = self._protect_policy(self.policy)
         for row in self.store.db.execute("SELECT scope FROM secrets"):
             self.guard.secrets.register(self.store.secret(row[0]))
         self.global_waiting = 0
@@ -52,18 +65,62 @@ class DiscussService:
         self.store.cleanup(self.policy["history_retention_days"])
         self.store.apply_limits(self.policy)
 
+    def _migrate_roles(self):
+        # Persist all grants in one atomic role replacement before deleting the
+        # old copies. A crash retries the same union before services are exposed.
+        rows = list(
+            self.store.db.execute(
+                "SELECT scope,role,actor FROM roles WHERE role IN ('super','admin','user')"
+            )
+        )
+        if not rows:
+            return
+        data = copy.deepcopy(self.roles.data)
+        for scope, name, user in rows:
+            platform, bot, group = json.loads(scope)
+            role = "group.discuss." + name
+            entries = self.roles.entries(data, group, role, platform, bot)
+            entries[role] = sorted(set(entries[role]) | {user}, key=int)
+        self.roles.replace(data)
+        with self.store.db:
+            self.store.db.execute(
+                "DELETE FROM roles WHERE role IN ('super','admin','user')"
+            )
+            self.store.log(
+                "system",
+                "system",
+                "role migration",
+                "迁移至统一 roles.json，保留平台/机器人/群范围",
+            )
+
+    def role(self, scope, name, user):
+        return (
+            self.store.role(scope, name, user)
+            if name == "blacklist"
+            else user in self.roles.discuss_list(scope, name)
+        )
+
+    def role_list(self, scope, name):
+        return (
+            self.store.role_list(scope, name)
+            if name == "blacklist"
+            else self.roles.discuss_list(scope, name)
+        )
+
+    def change_role(self, scope, actor, name, user, add):
+        if name == "blacklist":
+            self.store.change_role(scope, actor, name, user, add)
+        else:
+            self.roles.change_discuss(scope, name, user, add)
+            with self.store.db:
+                self.store.log(
+                    scope, actor, "role", f"{'add' if add else 'remove'} {name} {user}"
+                )
+
     def cancel_session(self, session):
         task = self.active_tasks.get(session)
         if task is not None and task is not asyncio.current_task():
             task.cancel()
-
-    def _protect_policy(self, policy):
-        # The search credential is separately encrypted, including in persisted policy.
-        if policy["search_api_key"]:
-            self.store.set_secret("system:search", "system", policy["search_api_key"])
-        policy["search_api_key"] = self.store.secret("system:search")
-        self.guard.secrets.register(policy["search_api_key"])
-        return policy
 
     def global_super(self, actor):
         return "super" in self.roles.effective(actor)
@@ -71,9 +128,9 @@ class DiscussService:
     def rank(self, scope, actor):
         if self.global_super(actor):
             return 3
-        if self.store.role(scope, "super", actor):
+        if self.role(scope, "super", actor):
             return 2
-        return 1 if self.store.role(scope, "admin", actor) else 0
+        return 1 if self.role(scope, "admin", actor) else 0
 
     def authorize(self, scope, actor, rank):
         if self.rank(scope, actor) < rank:
@@ -91,7 +148,7 @@ class DiscussService:
         mode = config["user_mode"]
         allowed = (
             mode == "all"
-            or (mode == "whitelist" and self.store.role(scope, "user", ctx.actor))
+            or (mode == "whitelist" and self.role(scope, "user", ctx.actor))
             or (
                 mode == "blacklist"
                 and not self.store.role(scope, "blacklist", ctx.actor)
@@ -364,15 +421,15 @@ class DiscussService:
         if global_command and not self.global_super(ctx.actor):
             raise BusinessError("仅全局 super 可使用此入口。")
         if not parts or parts[0] == "help":
-            return self.help(
-                ctx, global_command, parts[1] if len(parts) > 1 else "help"
+            if len(parts) > 2:
+                raise BusinessError("帮助只接受一个主题，请使用 /group-discuss help。")
+            return await self.help(
+                ctx, gateway, global_command, parts[1] if len(parts) > 1 else "help"
             )
         if not global_command and parts[0] in ("admin", "super"):
             prefix, parts = parts[0], parts[1:]
             if not parts or parts == ["help"]:
-                return self.help(
-                    ctx, False, "group-super" if prefix == "super" else "admin"
-                )
+                return await self.help(ctx, gateway, False, "admin")
         else:
             prefix = "global" if global_command else "user"
         if not parts:
@@ -382,7 +439,6 @@ class DiscussService:
             self.private(ctx)
             if parts[1:] == ["show"]:
                 shown = copy.deepcopy(self.policy)
-                shown["search_api_key"] = mask_key(shown["search_api_key"])
                 return json.dumps(shown, ensure_ascii=False, indent=2)
             if len(parts) >= 4 and parts[1] == "set":
                 key, value = parts[2], parse_value(" ".join(parts[3:]))
@@ -396,12 +452,8 @@ class DiscussService:
                 container[key] = value
                 validate_system(policy)
                 self.authorize("", ctx.actor, 3)
-                if parts[2] == "search_api_key":
-                    self.store.set_secret("system:search", ctx.actor, value)
-                    self.guard.secrets.register(value)
                 self.policy = policy
                 persisted = copy.deepcopy(policy)
-                persisted["search_api_key"] = ""
                 atomic_json(self.policy_path, persisted)
                 self.policy_path.chmod(0o600)
                 self.store.apply_limits(policy)
@@ -416,7 +468,7 @@ class DiscussService:
             scope = self.target(ctx, parts[1])
             if op == "enable":
                 user = qq_id(parts[2])
-                self.store.change_role(scope, ctx.actor, "super", user, True)
+                self.change_role(scope, ctx.actor, "super", user, True)
             self.store.save_group(scope, ctx.actor, enabled=op == "enable")
             if op == "disable":
                 self.store.end(scope, "all", "功能停用", ctx.actor)
@@ -451,12 +503,12 @@ class DiscussService:
             self.authorize(scope, ctx.actor, required)
             if action == "list":
                 return f"group.discuss.{op} 直接名单：" + (
-                    ", ".join(self.store.role_list(scope, op)) or "空"
+                    ", ".join(self.role_list(scope, op)) or "空"
                 )
             user = qq_id(parts[2])
             if action == "show":
                 return await self.describe_user(ctx, gateway, scope, user)
-            self.store.change_role(scope, ctx.actor, op, user, action == "add")
+            self.change_role(scope, ctx.actor, op, user, action == "add")
             return "已更新直接名单；继承权限及全员模式不受直接名单移除或黑名单影响。"
         if op == "role" and prefix == "user":
             if len(parts) != (1 if ctx.group else 2):
@@ -593,22 +645,29 @@ class DiscussService:
         rank = self.rank(scope, user)
         return (
             f"群 {group} 用户 {user}：\n管理等级 {rank}（0普通/1admin/2群super/3全局super）\n"
-            f"user 模式 {self.config(scope)['user_mode']}；白名单 {self.store.role(scope, 'user', user)}；"
+            f"user 模式 {self.config(scope)['user_mode']}；白名单 {self.role(scope, 'user', user)}；"
             f"黑名单 {self.store.role(scope, 'blacklist', user)}\n"
             f"有效 group.discuss.user：{'是' if allowed else '否'}"
             + ("；继承自管理身份" if rank else "")
         )
 
-    def help(self, ctx, global_command, topic):
-        allowed = {"help", "roles", "tools"}
+    async def help(self, ctx, gateway, global_command, topic):
+        allowed = {"help", "roles", "tools", "admin", "group-super"}
         if not ctx.group:
             allowed |= {"configuration", "statistics"}
         if global_command:
             allowed.add("super")
             topic = "super" if topic == "help" else topic
-        else:
-            # Admin command help is public syntax, never includes actual group data.
-            allowed |= {"admin", "group-super"}
         if topic not in allowed:
             raise BusinessError("无此帮助主题，或当前位置不可查看。")
-        return (DOCS / f"{topic}.md").read_text(encoding="utf-8")
+        topic = "admin" if topic == "group-super" else topic
+        name = (
+            "group-discuss" if topic in {"help", "super"} else "group-discuss-" + topic
+        )
+        data = await asyncio.to_thread(
+            self.images.read, name, ctx.location, super_help=topic == "super"
+        )
+        await gateway.send_image(
+            data, group=ctx.group, user="" if ctx.group else ctx.actor
+        )
+        return None

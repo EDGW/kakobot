@@ -29,9 +29,13 @@ class SuperRoleService:
         if value == "global":
             return [""]
         if value == "legacy":
-            return [""] + ([ctx.group] if ctx.group else sorted(self.roles.groups()))
+            return [""] + (
+                [ctx.group]
+                if ctx.group
+                else sorted(self.roles.groups(platform=ctx.platform, bot=ctx.bot))
+            )
         if value == "all" and not ctx.group:
-            return [""] + sorted(self.roles.groups())
+            return [""] + sorted(self.roles.groups(platform=ctx.platform, bot=ctx.bot))
         if value == "group" and ctx.group:
             return [ctx.group]
         if value.startswith("group:"):
@@ -42,8 +46,7 @@ class SuperRoleService:
 
     async def _seed(self, ctx, names, groups):
         for group in groups:
-            if ctx.group or not self.roles.data["group_admin_enabled"].get(group, True):
-                names.seed_members(group, await names.gateway.members(group))
+            names.seed_members(group, await names.gateway.members(group))
 
     async def handle(self, action, names):
         async with self.lock:
@@ -69,7 +72,8 @@ class SuperRoleService:
         )
         if sub in {"show", "list"}:
             return await self.query(sub, values, opts, ctx, names)
-        data = copy.deepcopy(self.roles.data)
+        original = self.roles.data
+        data = copy.deepcopy(original)
         touched = set()
         if sub in {"reset", "group-admin"}:
             minimum, maximum = (1, 2) if sub == "group-admin" else (0, 1)
@@ -83,15 +87,15 @@ class SuperRoleService:
             groups = csv(raw_groups, lambda value: self._group(value, ctx))
             selected = csv(opts["roles"]) if "roles" in opts else sorted(GROUP_ROLES)
             if not set(selected) <= GROUP_ROLES:
-                raise BusinessError(
-                    "--roles 仅接受 group.admin、group.ddl、group.summary。"
-                )
+                raise BusinessError("--roles 仅接受：" + "、".join(sorted(GROUP_ROLES)))
             for group in groups:
                 if sub == "group-admin":
                     data["group_admin_enabled"][group] = values[0].lower() != "on"
                 else:
                     for role in selected:
-                        entries = data["group_roles"].get(group, {})
+                        entries = self.roles.entries(
+                            data, group, role, ctx.platform, ctx.bot
+                        )
                         touched.update(entries.get(role, []))
                         if role in entries:
                             entries[role] = []
@@ -135,18 +139,18 @@ class SuperRoleService:
                         "set 的身份组必须全部属于 --scope 指定的单一范围。"
                     )
                 for group in scopes:
-                    entries = (
-                        data["group_roles"].get(group, {})
-                        if group
-                        else data["global_roles"]
-                    )
-                    for role, members in entries.items():
-                        entries[role] = [user for user in members if user not in users]
+                    for role in GROUP_ROLES if group else list(data["global_roles"]):
+                        entries = (
+                            self.roles.entries(data, group, role, ctx.platform, ctx.bot)
+                            if group
+                            else data["global_roles"]
+                        )
+                        entries[role] = [
+                            user for user in entries[role] if user not in users
+                        ]
             for ref in refs:
                 entries = (
-                    data["group_roles"].setdefault(
-                        ref.group, {role: [] for role in GROUP_ROLES}
-                    )
+                    self.roles.entries(data, ref.group, ref.name, ctx.platform, ctx.bot)
                     if ref.group
                     else data["global_roles"]
                 )
@@ -162,6 +166,8 @@ class SuperRoleService:
                 else "范围 " + opts["scope"]
             )
         validate_roles(data)
+        if self.roles.data is not original:
+            raise BusinessError("权限在操作期间已变更，请重试，避免覆盖他人的修改。")
         before = self.roles.data
         changes = self._diff(before, data)
         self._require_super(ctx)
@@ -188,7 +194,11 @@ class SuperRoleService:
             raise
         self.audit.finish(ticket)
         result = "已保存：\n" + description + "\n" + "\n".join(changes)
-        groups = [ctx.group] if ctx.group else sorted(self.roles.groups(), key=int)
+        groups = (
+            [ctx.group]
+            if ctx.group
+            else sorted(self.roles.groups(platform=ctx.platform, bot=ctx.bot), key=int)
+        )
         try:
             await self._seed(ctx, names, groups)
         except Exception as exc:
@@ -227,6 +237,9 @@ class SuperRoleService:
                 for role, users in roles.items()
                 for user in users
             )
+            for scope, roles in data["discuss_roles"].items():
+                for role, users in roles.items():
+                    result.update((user, scope + ":" + role) for user in users)
             return result
 
         old, new = flatten(before), flatten(after)
@@ -260,7 +273,7 @@ class SuperRoleService:
             if group or (ref and ref.group)
             else []
             if ref
-            else sorted(self.roles.groups(), key=int)
+            else sorted(self.roles.groups(platform=ctx.platform, bot=ctx.bot), key=int)
         )
         await self._seed(ctx, names, groups)
         users = (
@@ -284,7 +297,11 @@ class SuperRoleService:
                     {
                         candidate + role[5:]: origins
                         for role, origins in self.roles.sources(
-                            user, candidate, user in names.members.get(candidate, {})
+                            user,
+                            candidate,
+                            user in names.members.get(candidate, {}),
+                            platform=ctx.platform,
+                            bot=ctx.bot,
                         ).items()
                     }
                 )
@@ -297,7 +314,12 @@ class SuperRoleService:
                 if source_filter == "direct"
                 else origin.startswith("继承自 ")
                 if source_filter == "inherited"
-                else origin == "全员 group.admin 模式"
+                else origin
+                in {
+                    "全员 group.admin 模式",
+                    "全员 discuss 模式",
+                    "discuss 黑名单模式（未列入）",
+                }
                 for origin in origins
             )
             if sub == "show" or sources and matched:

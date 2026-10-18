@@ -24,22 +24,21 @@ show 展示存储值、生效值及全局约束；reset 恢复系统默认，api
 
 其他设置：`user_mode` 默认 whitelist；`api_key`、`model_name` 初始未设置；`reasoning_effort` 默认 low；`tools.NAME.enabled` 默认 false。工具、模型和思考强度必须在系统允许范围内。摘要上限必须小于上下文上限。
 
-模型地址、允许模型/思考强度/准入模式、全局工具开关、默认值和上限位于系统 `group_discuss` 配置；仅全局 super 管理，不回退使用总结或 DDL 的模型凭据。DeepSeek 地址与模型白名单初始留空，必须根据实际兼容端点配置。
+模型地址、允许模型/思考强度/准入模式、全局工具开关、默认值和上限位于系统 `group_discuss` 配置；仅全局 super 管理，不回退使用总结或 DDL 的模型凭据。DeepSeek 地址默认 https://api.deepseek.com，模型白名单初始留空，必须根据实际兼容端点配置。
 
 ```text
 /super group-discuss limits show
-/super group-discuss limits set api_address https://YOUR-DEEPSEEK-ENDPOINT/v1
+/super group-discuss limits set api_address https://api.deepseek.com
 /super group-discuss limits set allowed_models '["deepseek-YOUR-MODEL"]'
 /super group-discuss limits set maxima.max_sessions 20
 /super group-discuss limits set tool_enabled.search_web true
-/super group-discuss limits set search_api_key YOUR-TAVILY-KEY
 ```
 
 数组和对象使用 JSON，命令行用单引号包裹 JSON。普通字符串无需加引号。low/medium/high 是初始允许集合，目标模型是否支持需实际验证；不自动切换供应商或协议。
 
-运行初始约束：全机器人每日 5000000 tokens；每轮总超时 180 秒、单模型请求 90 秒、模型调用最多 8 次；单群并发 2、全局并发 6；单群排队 10、全局排队 30；工具超时 20 秒、结果 3000 tokens、网页 2 MiB、重定向 3 次；已结束会话正文保留 30 天。
+运行初始约束：全机器人每日 5000000 tokens；每轮总超时 180 秒、单模型请求 90 秒、模型调用最多 8 次；单群并发 2、全局并发 6；单群排队 10、全局排队 30；工具超时 20 秒、结果 3000 tokens、工具响应 2 MiB（网页请求由 DeepSeek Fetch 执行）；已结束会话正文保留 30 天。
 
-全局命令变更持久化到插件数据目录 `group_discuss_policy.json`，作为部署 config 的覆盖值；再次调整请使用 limits 命令，避免只改被覆盖的部署值。群凭据和历史使用 cryptography Fernet 加密，主密钥独立保存在 `group_discuss.key`，应与数据库一起备份，支持文件系统权限保护。搜索 Key 在系统配置中提供时，部署配置文件本身的访问权限由部署者管理。
+全局命令变更持久化到插件数据目录 `group_discuss_policy.json`，作为部署 config 的覆盖值；再次调整请使用 limits 命令，避免只改被覆盖的部署值。群凭据和历史使用 cryptography Fernet 加密，主密钥独立保存在 `group_discuss.key`，应与数据库一起备份，支持文件系统权限保护。
 
 ## 群系统提示词
 
@@ -56,3 +55,25 @@ show 展示存储值、生效值及全局约束；reset 恢复系统默认，api
 仅限私聊。本群 discuss admin/super 和全局 super 可修改。非空文本最多 4000 字符，上限由系统 `system_prompt_max_chars` 控制。系统上限收紧导致已有提示词超限时暂停调用，须调整后恢复。
 
 所有用户输入默认不可信，不能覆盖系统规则。群提示词用于每次正常回答及摘要请求，不赋予电脑控制、跨群查询、绕过预算或身份鉴权能力。
+
+搜索不需要独立 search_api_key，旧的运营者搜索凭据不再使用。系统 tool_enabled 默认全 true，各群 tools.NAME.enabled 默认 false。DeepSeek 内置搜索与独立 Search/Fetch 都使用本群 API Key，费用由本群 Key 提供者承担。
+
+## `/group-discuss admin config` 命令
+
+### `/group-discuss admin config` - CHAT
+
+**完整格式**：`/group-discuss admin config show GROUP [KEY]`、`/group-discuss admin config set GROUP KEY VALUE`、`/group-discuss admin config reset GROUP KEY`
+
+**所需权限组**：目标群 `group.discuss.admin`（含群 super 继承）或全局 `super`
+
+**参数说明**：GROUP 为群号；KEY 为本页设置项；VALUE 为值，数组使用 JSON，含空格的文本用引号包裹。show 支持查看单项或全部；reset 恢复系统默认，api_key 清除。Key 查看仅显示脱敏值。
+
+```text
+/group-discuss admin config show 123456
+/group-discuss admin config set 123456 max_sessions 5
+/group-discuss admin config reset 123456 system_prompt
+```
+
+### `/group-discuss admin config` - GROUP
+
+群聊不可用。请私聊机器人并指定群号。

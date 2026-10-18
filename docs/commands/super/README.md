@@ -29,3 +29,5 @@
 旧 Super 专用 `/role list/add/remove/clear/reset/group-admin`、`/cost`、`/announce`、`/readonly add/remove` 在过渡版本中转发至对应 Super 命令，帮助只展示新入口。不存在独立 `/request` 命令。
 
 `/send` 和 `/readonly list` 继续向全局 admin 开放；详见普通命令目录。
+
+群 AI 对话的启停、接管、群 super 任免和全局约束见 [group-discuss](../group-discuss/super.md)，使用 `/super group-discuss` 管理。

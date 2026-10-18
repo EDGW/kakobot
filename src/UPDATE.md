@@ -1,1 +1,1 @@
-KakoBot v2.0.0-alpha.1 新增群 AI 对话：@ 或回复即可交流，支持按群权限、预算和受控查询/联网工具。功能默认关闭，由全局 Super 开启；/group-discuss help 查看帮助。
+KakoBot v2.0.0-alpha.2：群 AI 身份接入 /role 管理，帮助改为图片，群管理文档已合并。联网统一使用本群 DeepSeek Key，支持内置搜索或独立 Search/Fetch，并显示搜索来源；群工具默认关闭。/group-discuss help 查看用法。

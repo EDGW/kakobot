@@ -16,6 +16,7 @@ CHAT 表示私聊，GROUP 表示群聊。权限按有效身份组判断，继承
 | 查询只读群 | [只读群查询](readonly.md) |
 | 展示更新日志图片 | [更新日志](changelog.md) |
 | 查询当前安装版本 | [当前版本](version.md) |
+| 群 AI 对话、权限、预算和联网工具 | [群 AI 对话](group-discuss/README.md) |
 | Super 专用管理 | [Super 命令目录](super/README.md) |
 
 时间均为北京时间；个人与各群任务独立。Readonly 在权限之外拦截，Super 也不能绕过。请求实际交给模型后先回复等待提示，不调用模型时不发该提示。超过15行的文字放入合并聊天记录，图片直接发送。

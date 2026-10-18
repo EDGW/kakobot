@@ -417,16 +417,7 @@ class DiscussStore:
 
     def tool_begin(self, turn, name, config):
         with self.db:
-            total = self.db.execute(
-                "SELECT COUNT(*) FROM tools WHERE turn=?", (turn,)
-            ).fetchone()[0]
-            count = self.db.execute(
-                "SELECT COUNT(*) FROM tools WHERE turn=? AND name=?", (turn, name)
-            ).fetchone()[0]
-            if (
-                total >= config["max_tool_calls_per_request"]
-                or count >= config[f"tools.{name}.max_calls_per_request"]
-            ):
+            if self.tool_remaining(turn, name, config) <= 0:
                 raise BusinessError("本轮工具调用次数已达上限。")
             identifier = uuid4().hex
             self.db.execute(
@@ -437,6 +428,34 @@ class DiscussStore:
                 "UPDATE turns SET tool_calls=tool_calls+1 WHERE id=?", (turn,)
             )
         return identifier
+
+    def tool_remaining(self, turn, name, config):
+        total = self.db.execute(
+            "SELECT COUNT(*) FROM tools WHERE turn=?", (turn,)
+        ).fetchone()[0]
+        native_names = (
+            ("native_search", "native_open_page", "native_find_in_page")
+            if name in {"search_web", "fetch_webpage"}
+            else ("", "", "")
+        )
+        count = self.db.execute(
+            "SELECT COUNT(*) FROM tools WHERE turn=? AND name IN (?, ?, ?, ?)",
+            (turn, name, *native_names),
+        ).fetchone()[0]
+        return min(
+            config["max_tool_calls_per_request"] - total,
+            config[f"tools.{name}.max_calls_per_request"] - count,
+        )
+
+    def native_tool(self, turn, action, state="completed"):
+        with self.db:
+            self.db.execute(
+                "INSERT INTO tools(id,turn,name,state) VALUES (?,?,?,?)",
+                (uuid4().hex, turn, "native_" + action, state),
+            )
+            self.db.execute(
+                "UPDATE turns SET tool_calls=tool_calls+1 WHERE id=?", (turn,)
+            )
 
     def tool_finish(self, identifier, state):
         with self.db:
@@ -455,6 +474,16 @@ class DiscussStore:
         result["tools"] = self.db.execute(
             "SELECT tool_calls FROM turns WHERE id=?", (turn,)
         ).fetchone()[0]
+        names = {
+            row[0]
+            for row in self.db.execute("SELECT name FROM tools WHERE turn=?", (turn,))
+        }
+        sources = []
+        if any(name.startswith("native_") for name in names):
+            sources.append("内置（DeepSeek Responses）")
+        if names & {"search_web", "fetch_webpage"}:
+            sources.append("外置（DeepSeek Search/Fetch，同群 Key）")
+        result["search_source"] = "、".join(sources) or "未使用"
         return result
 
     def finish_turn(self, turn, state):

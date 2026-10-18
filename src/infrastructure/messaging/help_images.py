@@ -6,6 +6,15 @@ from pathlib import Path
 from ...domain.errors import BusinessError
 
 PICS = Path(__file__).resolve().parents[3] / "docs/pics/commands"
+DISCUSS_TOPICS = {
+    "group-discuss": "help",
+    "group-discuss-admin": "admin",
+    "group-discuss-super": "admin",
+    "group-discuss-roles": "roles",
+    "group-discuss-tools": "tools",
+    "group-discuss-statistics": "statistics",
+    "group-discuss-configuration": "configuration",
+}
 
 
 class HelpImageStore:
@@ -21,13 +30,19 @@ class HelpImageStore:
                 "没有对应的帮助页面，请使用 /help 或 /super help 查看目录。"
             )
         directory = self.directory / "super" if super_help else self.directory
+        sources = self.directory.parent.parent / "commands"
+        if super_help:
+            sources /= "super"
+        if (not super_help and topic in DISCUSS_TOPICS) or (
+            super_help and topic == "group-discuss"
+        ):
+            topic = "super" if super_help else DISCUSS_TOPICS[topic]
+            directory = self.directory / "group-discuss"
+            sources = self.directory.parent.parent / "commands/group-discuss"
         path = directory / f"{topic}-{location.lower()}.jpeg"
         try:
             data = path.read_bytes()
         except FileNotFoundError as exc:
-            sources = self.directory.parent.parent / "commands"
-            if super_help:
-                sources /= "super"
             if topic == "help" or (sources / f"{topic}.md").is_file():
                 raise BusinessError(
                     "帮助图片缺失，请联系 Super 重新执行 make publish 并安装。"

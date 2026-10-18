@@ -1,5 +1,16 @@
 # 更新日志
 
+# Dev
+
+- `make docs` 在生成前清空图片输出目录，避免已移动或删除文档的旧帮助图片残留；`make publish` 同步采用完整重建。
+
+# v2.0.0-alpha.2
+
+- 将 group.discuss.super/admin/user 纳入统一 role 查询与管理，自动迁移旧授权，保留群范围、继承和全局 Super 管控。
+- 群 AI 帮助复用 CHAT/GROUP 图片体系；文档迁入 docs/commands/group-discuss，合并群 super 与 admin 管理页。
+- 联网优先使用 DeepSeek Responses 内置搜索，否则使用 DeepSeek Search/Fetch；统一由本群 API Key 付费，每轮标明搜索来源。
+- 默认模型地址为 https://api.deepseek.com；全局工具默认允许，群工具默认关闭。独立工具严格限次，内置搜索受供应商接口限次能力约束。
+
 # v2.0.0-alpha.1
 
 ### 新增

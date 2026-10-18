@@ -237,22 +237,22 @@
           "search_web": {
             "description": "search_web",
             "type": "bool",
-            "default": false
+            "default": true
           },
           "fetch_webpage": {
             "description": "fetch_webpage",
             "type": "bool",
-            "default": false
+            "default": true
           },
           "query_group_data": {
             "description": "query_group_data",
             "type": "bool",
-            "default": false
+            "default": true
           },
           "read_session_history": {
             "description": "read_session_history",
             "type": "bool",
-            "default": false
+            "default": true
           }
         }
       },
@@ -282,12 +282,7 @@
       "api_address": {
         "description": "api_address",
         "type": "string",
-        "default": ""
-      },
-      "search_api_key": {
-        "description": "search_api_key",
-        "type": "string",
-        "default": ""
+        "default": "https://api.deepseek.com"
       },
       "global_daily_token_budget": {
         "description": "global_daily_token_budget",
@@ -360,6 +355,6 @@
         "default": 4000
       }
     },
-    "hint": "独立于总结/DDL。群默认关闭；API 地址和模型白名单需显式配置。/super group-discuss limits 修改会持久化为运行数据覆盖，后续以该覆盖为准。search_api_key 为 Tavily 密钥。"
+    "hint": "群独立 Key 承担模型及 DeepSeek Search/Fetch 费用，不使用运营者搜索凭据。系统默认允许工具，群默认关闭。"
   }
 }

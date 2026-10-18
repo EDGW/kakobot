@@ -12,7 +12,9 @@ class RoleService:
             member = user in names.members.get(group, {})
             if ctx.group and user == ctx.actor:
                 member = True
-            source = self.roles.sources(user, group, member=member)
+            source = self.roles.sources(
+                user, group, member=member, platform=ctx.platform, bot=ctx.bot
+            )
             if source or ctx.group:
                 label = await names.group(group)
                 suffix = (
@@ -41,8 +43,9 @@ class RoleService:
         ctx = action.context
         groups = None
         if not ctx.group:
-            groups = sorted(self.roles.groups(), key=int)
+            groups = sorted(
+                self.roles.groups(platform=ctx.platform, bot=ctx.bot), key=int
+            )
             for group in groups:
-                if not self.roles.data["group_admin_enabled"].get(group, True):
-                    names.seed_members(group, await names.gateway.members(group))
+                names.seed_members(group, await names.gateway.members(group))
         return await self._description(ctx.actor, ctx, names, groups)

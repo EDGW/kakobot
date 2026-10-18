@@ -10,7 +10,11 @@ def documentation_files(directory, output):
     return [
         path
         for path in sorted(directory.rglob("*.md"))
-        if not path.is_relative_to(output) and path.stem.lower() not in EXCLUDED_STEMS
+        if not path.is_relative_to(output)
+        and (
+            path.stem.lower() not in EXCLUDED_STEMS
+            or (path.parent.name == "group-discuss" and path.stem == "configuration")
+        )
     ]
 
 

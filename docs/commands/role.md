@@ -39,3 +39,15 @@
 ```text
 /role
 ```
+
+## discuss 统一身份管理
+
+支持 `group.discuss.super`、`group.discuss.admin`、`group.discuss.user`；私聊编码为 `群号.discuss.super`、`群号.discuss.admin`、`群号.discuss.user`。继承 super → admin → user，独立于 group.admin。按当前平台、机器人账号和群隔离，专用 discuss 命令共用同一份授权。
+
+```text
+/super role add 10002 123456.discuss.admin
+/super role remove 10002 123456.discuss.admin
+/super role list 123456.discuss.super
+```
+
+上述管理命令须全局 super，普通用户通过 `/role` 查看自身。all/blacklist 模式影响有效 user，直接白名单授权与有效权限分别展示。黑名单不能撤销管理身份继承；全员 group.admin 不授予 discuss。clear/set/reset 同样覆盖目标范围的 discuss 直接授权，不清空 discuss 黑名单和准入模式。

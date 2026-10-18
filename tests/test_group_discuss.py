@@ -12,6 +12,8 @@ from src.domain.errors import BusinessError
 from src.domain.group_discuss.config import system_defaults, validate_system
 from src.domain.security import SecretFilter
 from src.infrastructure.group_discuss.store import DiscussStore, scope_key
+from src.infrastructure.storage.access.roles import RoleStore, empty_roles
+from src.infrastructure.storage.json_store import atomic_json
 
 
 class Guard:
@@ -39,6 +41,9 @@ class Gateway:
     async def send(self, **kwargs):
         self.sent.append(kwargs)
         return {"message_id": str(100 + len(self.sent))}
+
+    async def send_image(self, data, **kwargs):
+        self.sent.append({"data": data, **kwargs})
 
     async def message(self, identifier):
         return self.quotes[identifier]
@@ -86,7 +91,8 @@ async def service(tmp_path):
         return httpx.Response(200, json=response(answer()))
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    roles = SimpleNamespace(effective=lambda user: {"super"} if user == "1" else set())
+    atomic_json(tmp_path / "roles.json", empty_roles())
+    roles = RoleStore(tmp_path / "roles.json", "1")
     s = DiscussService(
         tmp_path,
         {},
@@ -300,6 +306,8 @@ async def test_disabled_tool_and_limits(service):
         await command(
             service, g, "/group-discuss admin config set 10 max_sessions 21", "2"
         )
+    assert all(service.policy["tool_enabled"].values())
+    service.policy["tool_enabled"]["search_web"] = False
     with pytest.raises(BusinessError):
         await command(
             service,
@@ -482,27 +490,22 @@ async def test_queue_cancellation_and_unknown_usage(service):
     assert service.store.stats(scope, "today")["unknown_requests"] == 1
 
 
-@pytest.mark.asyncio
-async def test_ssrf_protection_without_real_network(monkeypatch):
-    import safehttpx
+def test_fetch_rejects_local_urls():
+    from src.infrastructure.group_discuss.tools import validate_public_url
 
-    from src.infrastructure.group_discuss.tools import fetch_webpage
-
-    async def resolve(hostname):
-        if hostname in {"127.0.0.1", "localhost", "169.254.169.254", "10.0.0.1"}:
-            raise ValueError("non-public")
-        return "93.184.216.34"
-
-    monkeypatch.setattr(safehttpx, "async_validate_url", resolve)
     for url in [
         "file:///etc/passwd",
         "http://user:secret@example.com",
         "http://127.0.0.1/",
         "http://169.254.169.254/",
         "http://10.0.0.1/",
+        "http://[::1]/",
+        "http://localhost/",
+        "http://host.internal/",
     ]:
-        with pytest.raises((ValueError, BusinessError)):
-            await fetch_webpage(url, system_defaults())
+        with pytest.raises(BusinessError):
+            validate_public_url(url)
+    validate_public_url("https://example.com/article")
 
 
 def test_upgrade_backup_and_prerelease_version(tmp_path):
@@ -517,7 +520,7 @@ def test_upgrade_backup_and_prerelease_version(tmp_path):
     assert (tmp_path / "migration-backup-1.3.2" / "roles.json").is_file()
     assert (tmp_path / "migration-backup-1.3.2" / "deadlines.sqlite3").is_file()
     migrate(tmp_path)  # repeat is safe
-    assert ReleaseInfoStore().version() == "v2.0.0-alpha.1"
+    assert ReleaseInfoStore().version() == "v2.0.0-alpha.2"
 
 
 @pytest.mark.asyncio
@@ -542,3 +545,369 @@ async def test_closing_cancels_inflight_and_keeps_reservation(service):
     assert service.store.stats(scope, "today")["unknown_requests"] == 1
     assert not service.session_locks
     assert not service.active_tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model,native", [("deepseek-v4-pro", True), ("deepseek-flash", False)]
+)
+async def test_search_routing_and_group_key(service, model, native):
+    g = Gateway()
+    scope = await enable(service, g)
+    service.policy["allowed_models"].append(model)
+    await command(
+        service, g, f"/group-discuss admin config set 10 model_name {model}", "2"
+    )
+    for tool in ("search_web", "fetch_webpage"):
+        await command(
+            service,
+            g,
+            f"/group-discuss admin config set 10 tools.{tool}.enabled true",
+            "2",
+        )
+    requests = []
+
+    async def handler(request):
+        assert request.headers["authorization"] == "Bearer sk-example-123456789"
+        payload = json.loads(request.content)
+        requests.append((str(request.url), payload))
+        if request.url.path == "/v1/tools/search":
+            assert request.url.host == "api.deepseek.com"
+            assert payload == {"query": "test", "count": 3, "need_content": False}
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "title": "test",
+                            "url": "https://example.com",
+                            "summary": "result",
+                        }
+                    ]
+                },
+            )
+        tools = payload.get("tools", [])
+        if len(requests) == 1:
+            assert any(t["type"] == "web_search" for t in tools) is native
+            assert any(t.get("name") == "search_web" for t in tools) is not native
+            if native:
+                output = [
+                    {
+                        "type": "web_search_call",
+                        "id": "ws_1",
+                        "status": "completed",
+                        "action": {"type": "search", "query": "test"},
+                    }
+                ] + answer("内置搜索完成")
+            else:
+                output = [
+                    {
+                        "type": "function_call",
+                        "id": "fc_search",
+                        "call_id": "call_search",
+                        "name": "search_web",
+                        "arguments": '{"query":"test"}',
+                        "status": "completed",
+                    }
+                ]
+        else:
+            output = answer("独立搜索完成")
+        return httpx.Response(200, json=response(output))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await service.handle(ctx("2", "10", "搜索test", "search-1", True), g)
+    assert not service.guard.errors, service.guard.errors
+    assert len(requests) == (1 if native else 3)
+    assert "工具调用 1 次" in g.sent[-1]["text"]
+    assert (
+        "内置（DeepSeek Responses）"
+        if native
+        else "外置（DeepSeek Search/Fetch，同群 Key）"
+    ) in g.sent[-1]["text"]
+    assert ("输入 100" if native else "输入 200") in g.sent[-1]["text"]
+    assert service.store.secret(scope) == "sk-example-123456789"
+
+
+@pytest.mark.asyncio
+async def test_deepseek_fetch_and_transport_limits():
+    from src.infrastructure.group_discuss.tools import fetch_webpage, search_web
+
+    seen = []
+
+    async def handler(request):
+        seen.append(request)
+        assert str(request.url) == "https://api.deepseek.com/v1/tools/fetch"
+        assert request.headers["authorization"] == "Bearer sk-group"
+        assert json.loads(request.content) == {"url": "https://example.com"}
+        return httpx.Response(
+            200, json={"title": "Example", "content": "# Public page"}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        p = system_defaults()
+        assert (await fetch_webpage("https://example.com", p, client, "sk-group"))[
+            "content"
+        ] == "# Public page"
+        p["web_max_bytes"] = 5
+        with pytest.raises(BusinessError, match="大小"):
+            await fetch_webpage("https://example.com", p, client, "sk-group")
+        with pytest.raises(BusinessError):
+            await search_web("a" * 129, p, client, "sk-group")
+        with pytest.raises(BusinessError, match="Key"):
+            await fetch_webpage("https://example.com", p, client, "")
+        assert len(seen) == 2
+
+
+@pytest.mark.asyncio
+async def test_native_gates_and_independent_limit(service):
+    from src.application.group_discuss.harness import Turn
+
+    g = Gateway()
+    scope = await enable(service, g)
+    service.policy["allowed_models"].append("deepseek-v4-pro")
+    await command(
+        service, g, "/group-discuss admin config set 10 model_name deepseek-v4-pro", "2"
+    )
+    session = service.store.create_session(scope, "2", 5)
+    identifier = service.store.new_turn(session, "2")
+    turn = Turn(service, ctx("2", "10"), g, scope, session, identifier)
+    assert not turn.native_search_enabled()  # Group tools default to disabled.
+    for name in ("search_web", "fetch_webpage"):
+        await command(
+            service,
+            g,
+            f"/group-discuss admin config set 10 tools.{name}.enabled true",
+            "2",
+        )
+        await command(
+            service,
+            g,
+            f"/group-discuss admin config set 10 tools.{name}.max_calls_per_request 1",
+            "2",
+        )
+    await turn.check()
+    assert turn.native_search_enabled()
+    service.store.native_tool(identifier, "search")
+    assert not turn.native_search_enabled()
+    with pytest.raises(BusinessError, match="次数"):
+        service.store.tool_begin(identifier, "search_web", turn.config)
+    # Native web actions do not consume unrelated DDL tool quota.
+    assert (
+        service.store.tool_remaining(identifier, "query_group_data", turn.config) == 3
+    )
+
+
+@pytest.mark.asyncio
+async def test_unified_role_commands_and_scope(service):
+    from src.application.roles.management import SuperRoleService
+    from src.domain.roles import parse_role
+
+    g = Gateway()
+    scope = await enable(service, g)
+    ref = parse_role("10.discuss.admin", "")
+    assert (ref.name, ref.group) == ("group.discuss.admin", "10")
+
+    class Names:
+        gateway = g
+        guard = service.guard
+        members = {}
+
+        def seed_members(self, group, members):
+            self.members[group] = {str(m["user_id"]): m for m in members}
+
+        async def user(self, user, group=""):
+            return user
+
+        async def group(self, group):
+            return group
+
+    audit = SimpleNamespace(prepare=lambda *args: "ticket", finish=lambda *args: None)
+    manager = SuperRoleService(
+        service.roles, audit, SimpleNamespace(readonly_groups=set())
+    )
+
+    async def edit(sub, args):
+        return await manager.handle(
+            SimpleNamespace(
+                context=ctx(),
+                spec=SimpleNamespace(subcommand="role " + sub, usage="role " + sub),
+                arguments=args,
+            ),
+            Names(),
+        )
+
+    await edit("add", "3 10.discuss.admin")
+    assert service.role(scope, "admin", "3")
+    effective = service.roles.effective("3", "10", True, platform="qq", bot="9")
+    assert {"group.discuss.admin", "group.discuss.user"} <= effective
+    assert "group.discuss.admin" not in service.roles.effective(
+        "3", "10", True, platform="qq", bot="8"
+    )
+    await command(service, g, "/group-discuss super admin remove 3 10", "2")
+    assert "group.discuss.admin" not in service.roles.direct(
+        "3", "10", platform="qq", bot="9"
+    )
+    await edit("set", "3 10.discuss.user --scope group:10")
+    await service.require_user(ctx("3", "10"), g, scope)
+    result = await edit("list", "10.discuss.user --source direct")
+    assert "3" in result
+    await edit("clear", "3 --scope group:10")
+    with pytest.raises(BusinessError):
+        await service.require_user(ctx("3", "10"), g, scope)
+    await edit("add", "3 10.discuss.admin")
+    await edit("reset", "10 --roles group.discuss.admin")
+    assert not service.role(scope, "admin", "3")
+
+
+@pytest.mark.asyncio
+async def test_roles_migration_is_idempotent(service, tmp_path):
+    from src.infrastructure.storage.json_store import read_json
+
+    legacy = empty_roles()
+    legacy.pop("discuss_roles")
+    legacy["version"] = 2
+    legacy["global_roles"]["admin"] = ["3"]
+    path = tmp_path / "old-roles.json"
+    atomic_json(path, legacy)
+    upgraded = RoleStore(path, "1")
+    assert upgraded.data["version"] == 3
+    assert read_json(path.with_name("roles-before-discuss-unification.json")) == legacy
+    scope = scope_key(ctx(group="10"))
+    service.store.change_role(scope, "1", "admin", "3", True)
+    service.store.change_role(scope, "1", "blacklist", "4", True)
+    service._migrate_roles()
+    service._migrate_roles()
+    assert service.role_list(scope, "admin") == ["3"]
+    assert service.store.role_list(scope, "admin") == []
+    assert service.store.role_list(scope, "blacklist") == ["4"]
+
+
+@pytest.mark.asyncio
+async def test_help_cards_and_aliases(service, tmp_path):
+    from src.infrastructure.messaging.help_images import HelpImageStore
+
+    directory = tmp_path / "pics/commands"
+    cards = directory / "group-discuss"
+    cards.mkdir(parents=True)
+    for topic in ("help", "admin", "super"):
+        for location in ("chat", "group"):
+            (cards / f"{topic}-{location}.jpeg").write_bytes(
+                b"\xff\xd8\xff" + topic.encode()
+            )
+    service.images = HelpImageStore(directory)
+    g = Gateway()
+    await command(service, g, "/group-discuss help")
+    await command(service, g, "/group-discuss admin help")
+    await command(service, g, "/group-discuss super help")
+    assert len(g.sent) == 3
+    assert service.images.read("group-discuss-super", "CHAT") == service.images.read(
+        "group-discuss-admin", "CHAT"
+    )
+    assert service.images.read("group-discuss", "GROUP", super_help=True).endswith(
+        b"super"
+    )
+    with pytest.raises(BusinessError):
+        await command(service, g, "/super group-discuss help", "4")
+
+
+def test_alpha1_upgrade_preserves_state_and_queues_announcement(tmp_path):
+    from src.infrastructure.storage.broadcasts.conversations import ConversationStore
+    from src.infrastructure.storage.broadcasts.upgrades import UpgradeStore
+    from src.infrastructure.storage.json_store import read_json
+    from src.infrastructure.storage.migration import VERSION, migrate
+
+    migrate(tmp_path)
+    conversations = ConversationStore(tmp_path / "conversations.sqlite3")
+    conversations.observe(ctx("2"))
+    conversations.observe(ctx("3"))
+    conversations.reject(ctx("3"), True)
+    conversations.close()
+    roles = read_json(tmp_path / "roles.json")
+    roles.pop("discuss_roles")
+    roles["version"] = 2
+    atomic_json(tmp_path / "roles.json", roles)
+    store = DiscussStore(tmp_path)
+    scope = scope_key(ctx(group="10"))
+    store.change_role(scope, "1", "super", "2", True)
+    store.set_secret(scope, "1", "sk-upgrade-key")
+    store.close()
+    atomic_json(tmp_path / "version.json", {"version": "2.0.0-alpha.1"})
+    migrate(tmp_path)
+    migrate(tmp_path)
+    assert (tmp_path / "migration-backup-2.0.0-alpha.1/roles.json").is_file()
+    assert read_json(tmp_path / "roles.json")["version"] == 3
+    store = DiscussStore(tmp_path)
+    assert store.secret(scope) == "sk-upgrade-key"
+    assert store.role_list(scope, "super") == ["2"]
+    store.close()
+    conversations = ConversationStore(tmp_path / "conversations.sqlite3")
+    upgrades = UpgradeStore(conversations)
+    upgrades.prepare(VERSION, lambda actor: True)
+    assert upgrades.pending(VERSION) == [("qq", "9", "2")]
+    conversations.close()
+
+
+@pytest.mark.asyncio
+async def test_general_help_routes_discuss_cards(service, tmp_path):
+    from src.application.messaging.help import HelpService
+    from src.infrastructure.messaging.help_images import HelpImageStore
+
+    directory = tmp_path / "pics/commands"
+    cards = directory / "group-discuss"
+    cards.mkdir(parents=True)
+    for topic in ("help", "admin", "super"):
+        for location in ("chat", "group"):
+            (cards / f"{topic}-{location}.jpeg").write_bytes(
+                b"\xff\xd8\xff" + f"{topic}-{location}".encode()
+            )
+    help_service = HelpService(HelpImageStore(directory))
+    g = Gateway()
+    for group, handler, topic, expected in [
+        ("", "help", "group-discuss", "help-chat"),
+        ("10", "help", "group-discuss-admin", "admin-group"),
+        ("10", "help", "group-discuss-super", "admin-group"),
+        ("", "super_help", "group-discuss", "super-chat"),
+    ]:
+        await help_service.handle(
+            SimpleNamespace(
+                context=ctx(group=group),
+                arguments=topic,
+                spec=SimpleNamespace(handler=handler),
+            ),
+            g,
+        )
+        assert g.sent[-1]["data"].endswith(expected.encode())
+        assert g.sent[-1]["group"] == group
+
+
+@pytest.mark.asyncio
+async def test_role_effective_modes_match_discuss(service):
+    g = Gateway()
+    await enable(service, g)
+    for mode in ("whitelist", "all", "blacklist"):
+        await command(
+            service, g, f"/group-discuss admin config set 10 user_mode {mode}", "2"
+        )
+        await command(service, g, "/group-discuss admin blacklist add 4 10", "2")
+        for user, member in [("3", True), ("4", True), ("5", False)]:
+            effective = service.roles.effective(
+                user, "10", member, platform="qq", bot="9"
+            )
+            assert ("group.discuss.user" in effective) is (
+                member and (mode == "all" or (mode == "blacklist" and user != "4"))
+            )
+    # Legacy all-member admin doesn't grant AI management.
+    data = json.loads(json.dumps(service.roles.data))
+    data["group_admin_enabled"]["10"] = False
+    service.roles.replace(data)
+    roles = service.roles.effective("4", "10", True, platform="qq", bot="9")
+    assert "group.admin" in roles
+    assert "group.discuss.admin" not in roles
+    # Global super remains above group blacklist and revoked direct grants.
+    await command(service, g, "/group-discuss admin blacklist add 1 10", "2")
+    assert {
+        "group.discuss.super",
+        "group.discuss.admin",
+        "group.discuss.user",
+    } <= service.roles.effective("1", "10", True, platform="qq", bot="9")

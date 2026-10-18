@@ -20,7 +20,9 @@ class Authorizer:
 
     def effective(self, ctx):
         return self.roles.effective(ctx.actor) | (
-            self.roles.effective(ctx.actor, ctx.group, member=True)
+            self.roles.effective(
+                ctx.actor, ctx.group, member=True, platform=ctx.platform, bot=ctx.bot
+            )
             if ctx.group
             else set()
         )

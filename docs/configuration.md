@@ -50,6 +50,6 @@ Readonly 在命令入口、DDL 写入和发送处独立检查。调度每15秒�
 
 ## 群 AI 对话
 
-`group_discuss` 为独立配置命名空间，不使用上述总结/DDL 凭据；所有群初始关闭。全局 Super 配置 DeepSeek Responses 地址、模型白名单并启用目标群。具体配置见 [discuss 配置](group-dicsuss/configuration.md)。
+`group_discuss` 为独立配置命名空间，不使用上述总结/DDL 凭据；所有群初始关闭。全局 Super 配置 DeepSeek Responses 地址、模型白名单并启用目标群。具体配置见 [discuss 配置](commands/group-discuss/configuration.md)。
 
 新增 `group_discuss.sqlite3`（群身份、配置、加密历史、预算账本）、`group_discuss.key`（独立加密主密钥）及 `group_discuss_policy.json`（全局命令配置覆盖）。备份时保留密钥文件；丢失后不能解密已有凭据，启动会拒绝覆盖。群 Key 和搜索 Key 不进入审计或用量明文。

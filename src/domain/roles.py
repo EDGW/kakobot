@@ -6,7 +6,11 @@ from .context import qq_id
 from .errors import BusinessError
 
 GLOBAL_ROLES = frozenset({"super", "admin", "autoanalysis", "ddl", "summary"})
-GROUP_ROLES = frozenset({"group.admin", "group.ddl", "group.summary"})
+LEGACY_GROUP_ROLES = frozenset({"group.admin", "group.ddl", "group.summary"})
+DISCUSS_ROLES = frozenset(
+    {"group.discuss.super", "group.discuss.admin", "group.discuss.user"}
+)
+GROUP_ROLES = LEGACY_GROUP_ROLES | DISCUSS_ROLES
 
 
 def expand_global(direct: set[str]) -> set[str]:
@@ -21,9 +25,14 @@ def expand_global(direct: set[str]) -> set[str]:
 
 
 def expand_group(direct: set[str]) -> set[str]:
-    return direct | (
+    result = direct | (
         {"group.ddl", "group.summary"} if "group.admin" in direct else set()
     )
+    if "group.discuss.super" in result:
+        result.add("group.discuss.admin")
+    if "group.discuss.admin" in result:
+        result.add("group.discuss.user")
+    return result
 
 
 @dataclass(frozen=True)
@@ -45,7 +54,7 @@ def parse_role(code: str, current_group: str = "") -> RoleRef:
         if code in GROUP_ROLES:
             return RoleRef(code, current_group)
         raise BusinessError(
-            "群内只能使用全局组或本群 group.admin/group.ddl/group.summary，不能访问其他群。"
+            "群内只能使用全局组或本群 group.admin/group.ddl/group.summary 或 group.discuss.super/admin/user，不能访问其他群。"
         )
     prefix, sep, suffix = code.partition(".")
     if (
@@ -56,5 +65,5 @@ def parse_role(code: str, current_group: str = "") -> RoleRef:
     ):
         return RoleRef("group." + suffix, qq_id(prefix))
     raise BusinessError(
-        "私聊群身份组请使用 群号.admin、群号.ddl 或 群号.summary；未知身份组不接受。"
+        "私聊群身份组请使用 群号.admin、群号.ddl 、群号.summary 或 群号.discuss.super/admin/user；未知身份组不接受。"
     )

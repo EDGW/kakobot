@@ -6,7 +6,7 @@ DOCS_ARGS ?=
 .DEFAULT_GOAL := help
 
 help:
-	@echo "make docs     Generate CHAT/GROUP JPEG cards in docs/pics/"
+	@echo "make docs     Clear docs/pics/, then generate CHAT/GROUP JPEG cards"
 	@echo "make publish  Generate documentation, then build the plugin ZIP in dist/"
 	@echo "Override PYTHON or DOCS_ARGS as needed. No upload or push is performed."
 
