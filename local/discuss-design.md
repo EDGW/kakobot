@@ -437,3 +437,10 @@ local/discuss-design.md               # 本设计稿
 新默认值：会话 300000 / 上限 2000000 tokens；群每日 2000000 / 上限 20000000 tokens；全局每日 50000000 tokens；输出 8192 / 上限 32768 tokens；摘要 1800 / 上限 6000 tokens；总工具次数 15 / 上限 36；单工具 9 / 上限 24；模型调用 24 次。以上修订取代前文旧额度。
 
 启动检测旧配置版本，事务迁移群配置并持久化系统策略版本；旧默认额度升级，非默认自定义值保留，重启不重复升级，不修改历史账本。
+
+
+## discuss Markdown 卡片输出
+
+采用 markdown-it-py + mdit-py-plugins + Pygments 解析常用 Markdown，随包 KaTeX 0.16.22（含 MIT 许可证）排版 LaTeX 数学公式，通过 Playwright Chromium 离线截图。超 1000 字符/公式/表格强制渲染，模型可通过首行 [[render:card]] 主动选用；首行标记由宿主删除。简短普通回答保持文字。紧凑排版，长文分页，所有图片消息 ID 关联同一会话；底部沿用宿主用量统计。浏览器缺失/渲染失败则退回文字。
+
+渲染是宿主排版功能，不向 AI 开放浏览器工具。禁止 HTML、脚本与远程图片，CSP 禁止网络并阻止全部浏览器请求。所有 discuss 模型回答、摘要及工具循环仅使用群 DeepSeek Key，Search/Fetch 同 Key；不调用全局 AI provider，不引入额外图像生成请求。

@@ -19,12 +19,13 @@ from ...domain.group_discuss.config import (
     validate_system,
 )
 from ...domain.security import SecretViolation
+from ...infrastructure.group_discuss.rendering import render_markdown_cards
 from ...infrastructure.group_discuss.store import DiscussStore, scope_key
 from ...infrastructure.messaging.help_images import HelpImageStore
 from ...infrastructure.messaging.onebot import ReadonlyViolation
 from ...infrastructure.storage.json_store import atomic_json, read_json
 from ...presentation.group_discuss.configuration import render_configuration
-from ...presentation.group_discuss.output import usage_footer
+from ...presentation.group_discuss.output import output_mode, usage_footer
 from .harness import Turn, run_turn
 
 
@@ -410,12 +411,26 @@ class DiscussService:
         ):
             self.store.end(scope, session, "会话预算耗尽")
             text += "\n会话预算已耗尽，本会话结束。"
-        await self.send(
-            ctx,
-            gateway,
-            text + "\n\n" + usage_footer(self.store.turn_usage(identifier)),
-            session,
-        )
+        text, use_card = output_mode(text)
+        footer = usage_footer(self.store.turn_usage(identifier))
+        if use_card and state == "completed":
+            try:
+                images = await render_markdown_cards(text, footer)
+            except Exception as exc:
+                await self.guard.report_error(
+                    gateway.bot, ctx.bot, "group-discuss-render", exc
+                )
+                # Never lose the answer when Chromium is unavailable or rendering fails.
+                await self.send(ctx, gateway, text + "\n\n" + footer, session)
+                return
+            for data in images:
+                result = await gateway.send_image(
+                    data, group=ctx.group, user="" if ctx.group else ctx.actor
+                )
+                if isinstance(result, dict) and result.get("message_id") is not None:
+                    self.store.map_message(scope, result["message_id"], session)
+            return
+        await self.send(ctx, gateway, text + "\n\n" + footer, session)
 
     def target(self, ctx, value):
         group = qq_id(value)

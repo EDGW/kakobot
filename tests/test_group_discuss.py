@@ -44,6 +44,7 @@ class Gateway:
 
     async def send_image(self, data, **kwargs):
         self.sent.append({"data": data, **kwargs})
+        return {"message_id": str(100 + len(self.sent))}
 
     async def message(self, identifier):
         return self.quotes[identifier]
@@ -376,14 +377,14 @@ async def test_context_summary_counts_toward_turn_usage(service):
 
     g = Gateway()
     scope = await enable(service, g)
-    service.store.save_group(scope, "1", config={"context_max_bytes": 6000})
+    service.store.save_group(scope, "1", config={"context_max_bytes": 12000})
     session = service.store.create_session(scope, "2", 5)
     history = []
     for i in range(3):
         history.extend(
             [
-                ModelRequest(parts=[UserPromptPart(f"旧问题{i}" + "a" * 600)]),
-                ModelResponse(parts=[TextPart("旧回答" + "b" * 600)]),
+                ModelRequest(parts=[UserPromptPart(f"旧问题{i}" + "a" * 2000)]),
+                ModelResponse(parts=[TextPart("旧回答" + "b" * 2000)]),
             ]
         )
     service.store.save_history(
@@ -393,6 +394,8 @@ async def test_context_summary_counts_toward_turn_usage(service):
     requests = []
 
     async def handler(request):
+        assert request.headers["authorization"] == "Bearer sk-example-123456789"
+        assert request.url.host == "deepseek.example"
         payload = json.loads(request.content)
         requests.append(payload)
         is_summary = "压缩群对话" in payload.get("instructions", "")
@@ -1387,3 +1390,55 @@ def test_legacy_limits_preserve_custom_values_with_injected_schema_defaults():
         input_size_bytes("西安")
         == len(json.dumps("西安", ensure_ascii=False).encode("utf-8")) + 256
     )
+
+
+@pytest.mark.asyncio
+async def test_card_answer_reply_mapping_and_renderer_fallback(service, monkeypatch):
+    import src.application.group_discuss.service as module
+
+    g = Gateway()
+    scope = await enable(service, g)
+    service.system_config["provider_settings"] = {
+        "api_key": "sk-global-must-not-be-used"
+    }
+    requests = []
+
+    async def handler(request):
+        assert request.headers["authorization"] == "Bearer sk-example-123456789"
+        assert request.url.host == "deepseek.example"
+        requests.append(request)
+        return httpx.Response(200, json=response(answer("[[render:card]]\n$x^2$")))
+
+    async def render(text, footer):
+        assert text == "$x^2$"
+        assert footer.startswith("tokens input:")
+        return [b"first-page", b"second-page"]
+
+    monkeypatch.setattr(module, "render_markdown_cards", render)
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await service.handle(ctx("2", "10", "计算公式", "card-1", True), g)
+    assert [m["data"] for m in g.sent] == [b"first-page", b"second-page"]
+    session = service.store.message_session(scope, "101")
+    assert session
+    assert service.store.message_session(scope, "102") == session
+
+    async def fail(*args):
+        raise RuntimeError("browser unavailable")
+
+    monkeypatch.setattr(module, "render_markdown_cards", fail)
+    await service.handle(
+        ctx(
+            "2",
+            "10",
+            "继续",
+            "card-2",
+            segments=[{"type": "reply", "data": {"id": "102"}}],
+        ),
+        g,
+    )
+    assert "$x^2$" in g.sent[-1]["text"]
+    assert "[[render:card]]" not in g.sent[-1]["text"]
+    assert "tokens input:" in g.sent[-1]["text"]
+    assert len(requests) == 2
+    assert service.store.message_session(scope, "103") == session

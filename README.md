@@ -6,7 +6,7 @@ AstrBot 的 OneBot v11 QQ 插件，支持群聊和个人 DDL 提醒、私聊消�
 
 1. 从 [Releases](https://github.com/EDGW/kakobot/releases) 下载插件 ZIP，在 AstrBot 插件管理中安装。
 2. 通过 NapCat 等 OneBot v11 实现连接 QQ，配置 `super_user` 为自己的 QQ 号。
-3. 需要 AI 功能时，填写 `api_address`、`api_key` 和 `model_name`；服务需支持 Responses API。
+3. 私聊分析等 AI 功能使用插件的全局 `api_address`、`api_key` 和 `model_name`。群 discuss 独立使用群 DeepSeek Key 与模型配置，回答、摘要和联网均不使用全局 AI 提供商。
 4. Super 私聊机器人，授权用户或群成员：
 
 ```text
@@ -45,3 +45,13 @@ Super 使用 `/super help` 管理身份组、各用户和各群的 DDL、好友�
 - [开发与打包](docs/development.md)：代码结构、本地检查与 ZIP 构建。
 
 时间默认使用北京时间。各群和各用户的个人任务独立；Readonly 在身份组之外拦截，Super 也不能绕过。
+
+## 群讨论 Markdown 卡片依赖
+
+群 discuss 超过 1000 字符、包含公式或表格时自动生成紧凑图片，AI 也可主动选择卡片。渲染使用 Markdown-it、KaTeX 和本地 Playwright Chromium，不调用 AI，不加载远程资源。插件 requirements 安装后，在运行 AstrBot 的同一 Python 环境执行：
+
+```sh
+python -m playwright install chromium
+```
+
+Linux 容器若缺少浏览器系统依赖，可在构建镜像时执行 `python -m playwright install --with-deps chromium`。浏览器应安装在运行 AstrBot 的同一用户缓存目录，或配置相同的 PLAYWRIGHT_BROWSERS_PATH。插件不会在对话中下载浏览器或运行安装命令；未安装或渲染失败时退回文字，回答和用量不会丢失。

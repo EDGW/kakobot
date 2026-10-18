@@ -16,7 +16,7 @@ from .deadlines.preferences import PreferenceStore
 from .deadlines.tasks import initialize_schema, validate_database
 from .json_store import atomic_json, read_json
 
-VERSION = "2.0.0-beta.1.2"
+VERSION = "2.0.0-beta.1.3"
 
 
 @contextmanager

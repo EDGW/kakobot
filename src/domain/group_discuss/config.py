@@ -13,7 +13,17 @@ TOOLS = (
     "read_session_history",
     "query_docs",
 )
-DEFAULT_SYSTEM_PROMPT = "符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容"
+LEGACY_SYSTEM_PROMPT = "符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容"
+OUTPUT_INSTRUCTIONS = (
+    "使用 Markdown 编写回答，支持标题、列表、引用、代码块、表格和 LaTeX 公式。"
+    "普通简短回答可直接输出文字；需要排版时在最终回答第一行输出 [[render:card]]，"
+    "适合纯文字时可输出 [[render:text]]，标记后换行写正文。"
+    r"包含数学公式必须选择 [[render:card]]，公式使用 $...$、$$...$$、\(...\) 或 \[...\]。"
+    "表格和超过 1000 字符的回答会自动渲染为卡片；文字标记不能绕过自动渲染。"
+    "不要生成 HTML、脚本或远程图片；来源使用 Markdown 链接。"
+    "不要自行编造或输出用量统计，统计由机器人附加。"
+)
+DEFAULT_SYSTEM_PROMPT = LEGACY_SYSTEM_PROMPT + "。\n" + OUTPUT_INSTRUCTIONS
 DEFAULTS = {
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
     "max_sessions": 5,
@@ -126,6 +136,8 @@ def upgrade_policy_limits(policy):
 def upgrade_tools_policy(policy, fallback=None):
     """Add new docs-tool settings to old nested overrides without changing choices."""
     base = fallback if fallback is not None else system_defaults()
+    if policy["defaults"].get("system_prompt") == LEGACY_SYSTEM_PROMPT:
+        policy["defaults"]["system_prompt"] = DEFAULT_SYSTEM_PROMPT
     for section, keys in {
         "defaults": (
             "tools.query_docs.enabled",

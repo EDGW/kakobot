@@ -14,7 +14,11 @@ def main():
     root = Path(__file__).resolve().parents[2]
     check(root)
     metadata = (root / "metadata.yaml").read_text(encoding="utf-8")
-    version = re.search(r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\s*$", metadata, re.MULTILINE)
+    version = re.search(
+        r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\s*$",
+        metadata,
+        re.MULTILINE,
+    )
     if version is None:
         raise ValueError("metadata.yaml 缺少有效版本号。")
     names = [
@@ -33,6 +37,11 @@ def main():
         if "tooling" not in path.parts
     ]
     names += ["assets/fonts/NotoSansSC.ttf", "assets/fonts/OFL.txt"]
+    names += [
+        str(path.relative_to(root))
+        for path in sorted((root / "assets/katex").rglob("*"))
+        if path.is_file()
+    ]
     names += [
         str(path.relative_to(root)) for path in sorted((root / "docs").rglob("*.md"))
     ]

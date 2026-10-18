@@ -333,7 +333,7 @@ class OneBotGateway:
         )
         # A native image segment bypasses only text-forward formatting; the
         # guarded client still validates the destination and full payload.
-        await self.bot.call_action(
+        return await self.bot.call_action(
             "send_group_msg" if group else "send_private_msg",
             **destination,
             self_id=self.self_id,

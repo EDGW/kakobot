@@ -7,3 +7,33 @@ def usage_footer(usage):
         f"output: {usage['output']}. toolcall(s) {usage['tools']}.\n"
         f"搜索/网页来源：{usage['search_source']}。"
     )
+
+
+RENDER_CARD = "[[render:card]]"
+RENDER_TEXT = "[[render:text]]"
+LONG_REPLY_CHARS = 1000
+
+
+def output_mode(text):
+    """An optional first-line model directive cannot bypass automatic card rules."""
+    import re
+
+    force = False
+    stripped = text.lstrip()
+    for marker in (RENDER_CARD, RENDER_TEXT):
+        if (
+            stripped == marker
+            or stripped.startswith(marker + "\n")
+            or stripped.startswith(marker + "\r\n")
+        ):
+            force = marker == RENDER_CARD
+            text = stripped[len(marker) :].lstrip("\r\n")
+            break
+    # Ignore fenced/inline code when detecting formula delimiters.
+    prose = re.sub(r"```.*?```|~~~.*?~~~|`[^`\n]*`", "", text, flags=re.S)
+    formula = re.search(
+        r"\$\$[\s\S]+?\$\$|(?<!\\)\$[^\s$][^$\n]*\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]|\\begin\{",
+        prose,
+    )
+    table = re.search(r"(?m)^\s*\|?.+\|.+\n\s*\|?\s*:?-{3,}", prose)
+    return text, force or len(text) > LONG_REPLY_CHARS or bool(formula or table)
