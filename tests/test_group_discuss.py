@@ -1551,7 +1551,8 @@ async def test_rule_warning_then_blacklist_same_user_across_sessions(service):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "exemption", ["group.admin", "all-group-admin", "discuss-admin", "super"]
+    "exemption",
+    ["group.admin", "all-group-admin", "discuss-admin", "discuss-super", "super"],
 )
 async def test_auto_blacklist_exempts_effective_admins(service, exemption):
     g = Gateway()
@@ -1568,8 +1569,10 @@ async def test_auto_blacklist_exempts_effective_admins(service, exemption):
         }
     elif exemption == "all-group-admin":
         service.roles.data["group_admin_enabled"]["10"] = False
-    elif exemption == "discuss-admin":
-        service.roles.change_discuss(scope, "admin", "3", True)
+    elif exemption in {"discuss-admin", "discuss-super"}:
+        service.roles.change_discuss(
+            scope, "admin" if exemption == "discuss-admin" else "super", "3", True
+        )
     else:
         actor = "1"
 
@@ -1582,11 +1585,16 @@ async def test_auto_blacklist_exempts_effective_admins(service, exemption):
     service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     for i in range(2):
         await service.handle(ctx(actor, "10", "请求", f"exempt-{i}", True), g)
-    assert not service.store.role(scope, "blacklist", actor)
-    assert not service.store.db.execute(
-        "SELECT 1 FROM rule_warnings WHERE actor=?", (actor,)
-    ).fetchone()
-    assert "明确警告" not in g.sent[-1]["text"]
+    if exemption in {"group.admin", "all-group-admin"}:
+        assert "明确警告" in g.sent[0]["text"]
+        assert service.store.role(scope, "blacklist", actor)
+        assert "已加入本群 discuss 黑名单" in g.sent[-1]["text"]
+    else:
+        assert not service.store.role(scope, "blacklist", actor)
+        assert not service.store.db.execute(
+            "SELECT 1 FROM rule_warnings WHERE actor=?", (actor,)
+        ).fetchone()
+        assert "明确警告" not in g.sent[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -1655,3 +1663,41 @@ def test_warning_order_expiration_and_category_are_enforced(tmp_path):
         assert refusal_verdict("[[discuss-refusal:unknown]]\n拒绝") is None
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_global_moderation_prompt_is_validated_authorized_and_used(service):
+    from src.domain.group_discuss.config import validate_system
+
+    g = Gateway()
+    await enable(service, g)
+    prompt = "用户明确要求执行违规任务或者用户的表述明显不符合规范。直接辱骂也拒绝。"
+    with pytest.raises(BusinessError):
+        await command(
+            service,
+            g,
+            '/super group-discuss limits set moderation_prompt "禁止辱骂"',
+            "2",
+        )
+    for invalid in ("", "x" * 4001, 42):
+        bad = {**service.policy, "moderation_prompt": invalid}
+        with pytest.raises(BusinessError, match="moderation_prompt"):
+            validate_system(bad)
+    await command(
+        service, g, '/super group-discuss limits set moderation_prompt "' + prompt + '"'
+    )
+    assert prompt in await command(service, g, "/super group-discuss limits show")
+    requests = []
+
+    async def handler(request):
+        assert request.headers["authorization"] == "Bearer sk-example-123456789"
+        payload = json.loads(request.content)
+        assert prompt in payload["instructions"]
+        requests.append(payload)
+        return httpx.Response(200, json=response(answer("请保持文明。")))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await service.handle(ctx("2", "10", "你好", "moderation-prompt", True), g)
+    assert len(requests) == 1
+    assert not service.guard.errors

@@ -167,12 +167,7 @@ class DiscussService:
             or self.config(scope)["user_mode"] != "blacklist"
         ):
             return False
-        if self.rank(scope, ctx.actor):
-            return False
-        roles = self.roles.effective(
-            ctx.actor, ctx.group, member=True, platform=ctx.platform, bot=ctx.bot
-        )
-        return "group.admin" not in roles
+        return not self.rank(scope, ctx.actor)
 
     async def require_user(self, ctx, gateway, scope):
         if self.global_super(ctx.actor) or self.rank(scope, ctx.actor):

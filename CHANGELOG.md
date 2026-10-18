@@ -1,5 +1,10 @@
 # 更新日志
 
+# Dev
+
+- 全局 discuss 新增 moderation_prompt 通用违规判定配置，默认涵盖“用户明确要求执行违规任务或者用户的表述明显不符合规范”，包括直接辱骂并排除正常引用和词义讨论。
+- 收紧 discuss 自动处罚豁免：仅本群 group.discuss.admin、继承它的 group.discuss.super 及全局 Super 豁免；group.admin（含继承与全员模式）不再豁免。
+
 # v2.0.0-beta.1.5
 
 - blacklist 模式支持同群同用户的违规警告与自动拉黑：明确警告送达后，24 小时内再次同类违规才加入 discuss 黑名单并告知，跨会话保留且支持人工撤销。

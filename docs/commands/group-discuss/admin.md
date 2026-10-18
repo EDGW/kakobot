@@ -476,6 +476,6 @@ user 操作白名单；blacklist 操作独立黑名单。私聊必须填 GROUP�
 
 ## 自动黑名单与管理员豁免
 
-blacklist 模式下，同一用户收到明确违规警告后，24 小时内再次提出同类违规要求，会自动加入本群 discuss 黑名单并在群内告知。有效 group.admin（含继承与全员模式）、discuss 管理员及全局 Super 豁免，权限由程序实时核验，不依赖用户或 AI 自称。all/whitelist 模式不自动处罚。
+blacklist 模式下，同一用户收到明确违规警告后，24 小时内再次提出同类违规要求，会自动加入本群 discuss 黑名单并在群内告知。仅本群 group.discuss.admin、group.discuss.super 及全局 Super 豁免；group.admin（含继承与全员模式）不豁免，权限由程序实时核验，不依赖用户或 AI 自称。all/whitelist 模式不自动处罚。
 
 自动黑名单与人工名单共用存储，可用 blacklist list 查看，用 blacklist remove USER GROUP 解除；解除同时清除本群该用户的所有有效警告。警告按用户、群和违规类别隔离，跨会话、重启保留，有效期 24 小时。首次警告或拉黑告知发送失败时不记处罚，详细规则见群 AI 对话帮助。

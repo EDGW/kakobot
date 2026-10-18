@@ -100,6 +100,9 @@ class MeteredResponsesModel(OpenAIResponsesModel):
             instruction_parts=[
                 *(model_request_parameters.instruction_parts or []),
                 InstructionPart(group_policy),
+                InstructionPart(
+                    "全局违规判定规则：\n" + turn.service.policy["moderation_prompt"]
+                ),
             ],
         )
         turn.model_calls += 1
@@ -374,7 +377,13 @@ async def run_turn(turn, prompt):
             source_limit = max(
                 0,
                 config["context_max_bytes"]
-                - input_size_bytes([INSTRUCTIONS, config["system_prompt"]])
+                - input_size_bytes(
+                    [
+                        INSTRUCTIONS,
+                        config["system_prompt"],
+                        turn.service.policy["moderation_prompt"],
+                    ]
+                )
                 - 1024,
             )
             source = (

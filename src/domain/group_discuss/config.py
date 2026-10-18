@@ -5,6 +5,7 @@ import json
 from urllib.parse import urlsplit
 
 from ..errors import BusinessError
+from .moderation import DEFAULT_MODERATION_PROMPT
 
 TOOLS = (
     "search_web",
@@ -68,6 +69,7 @@ def system_defaults():
         "allowed_efforts": ["low", "medium", "high"],
         "allowed_user_modes": ["whitelist", "all", "blacklist"],
         "api_address": "https://api.deepseek.com",
+        "moderation_prompt": DEFAULT_MODERATION_PROMPT,
         "global_daily_token_budget": 50000000,
         "request_timeout": 180,
         "model_timeout": 90,
@@ -221,6 +223,9 @@ def validate_system(policy):
             type(policy[key]) is not int or not 1 <= policy[key] <= 1000000000
         ):
             raise BusinessError(f"{key} 必须为正整数且不超过 10 亿。")
+    prompt = policy["moderation_prompt"]
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000:
+        raise BusinessError("moderation_prompt 须为非空文本，最多 4000 字符。")
     address = policy["api_address"]
     if not isinstance(address, str):
         raise BusinessError("api_address 必须为字符串。")

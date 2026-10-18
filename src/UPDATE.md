@@ -1,1 +1,1 @@
-KakoBot v2.0.0-beta.1.5：blacklist 模式下，明确警告后 24 小时内再次同类违规自动加入 discuss 黑名单并告知；group.admin（含继承）、discuss 管理员及 Super 豁免。浏览器改为手动安装。
+KakoBot beta.1.5 修订：新增全局 discuss moderation_prompt，直接辱骂等明显不规范表述纳入违规判定；仅 discuss 管理员及全局 Super 豁免自动处罚，group.admin 不豁免。
