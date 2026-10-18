@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from .bot_docs import build as build_bot_docs
 from .check import check
 from .docs_images.document import documentation_files
 
@@ -13,6 +14,7 @@ from .docs_images.document import documentation_files
 def main():
     root = Path(__file__).resolve().parents[2]
     check(root)
+    build_bot_docs(root)
     metadata = (root / "metadata.yaml").read_text(encoding="utf-8")
     version = re.search(
         r"^version:\s*(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+|\.(?:alpha|beta|rc)\.[0-9]+(?:\.[0-9]+)*)?)\s*$",
@@ -45,6 +47,7 @@ def main():
     names += [
         str(path.relative_to(root)) for path in sorted((root / "docs").rglob("*.md"))
     ]
+    names += [str(path.relative_to(root)) for path in sorted((root / "docs-bot").rglob("*.json"))]
     for source in documentation_files(root / "docs", root / "docs/pics"):
         relative = source.relative_to(root / "docs")
         for location in ("chat", "group"):
@@ -77,17 +80,13 @@ def main():
     with ZipFile(output) as archive:
         assert archive.testzip() is None
         assert all(archive.read(name) == (root / name).read_bytes() for name in names)
+        runtime_files = {
+            "version.json", "access.json", "roles.json", "readonly.json",
+            "ddl_preferences.json",
+        }
         assert not any(
-            name.endswith(
-                (
-                    "version.json",
-                    ".sqlite3",
-                    "access.json",
-                    "roles.json",
-                    "readonly.json",
-                    "ddl_preferences.json",
-                )
-            )
+            name.endswith(".sqlite3")
+            or (Path(name).name in runtime_files and not name.startswith("docs-bot/"))
             for name in archive.namelist()
         )
     print(output)

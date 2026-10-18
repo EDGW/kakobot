@@ -77,6 +77,22 @@
 - 模型、思考强度或准入模式不再被系统允许时，暂停相关调用并要求修正，不自动替换。
 - 配置在后续调用前重新检查；已经提交供应商的请求仍可能产生费用。
 
+## 图片识别
+
+图片识别默认关闭。群 admin 可私聊开启，并选择支持图片输入的模型，例如当前官方 `deepseek-flash`：
+
+```text
+/group-discuss admin config set 123456 model_name deepseek-flash
+/group-discuss admin config set 123456 allow_images true
+/group-discuss admin config show 123456 allow_images
+```
+
+开启后，群成员可 @ 机器人发送图片（可附问题文字），或 @ 机器人并引用本群图片消息提问；回复机器人继续会话时也可附图。仅处理本条消息及经平台核验的直接引用消息，不自动扫描其他群消息或展开合并转发。图片中的文字与引用一样属于不可信资料，不能授予权限。
+
+关闭时仍可文字对话，图片不发送给模型，已归档历史中的图片也从后续模型输入移除；历史文字及已有回答仍保留。重新开启会允许尚在上下文中的历史图片再次发送。恢复继承值使用 `config reset 123456 allow_images`；全局 Super 可用 `limits set defaults.allow_images true` 修改默认值，旧配置缺少该项时自动补为 false。
+
+图片通过 OneBot 提供的 HTTP(S) 地址交给模型读取，本机不下载图片；只有本地文件名、地址失效或模型不支持图片时可能无法识别，请重新发送或更换支持的模型。图片输入费用由本群 Key 承担，并按供应商返回的 usage 结算；图片实际 token 用量不能由 URL 长度推算，预留与本地上下文字节限制不能作为图片用量上限。
+
 ## 群配置：Key、模型与用户准入
 
 | 设置项 | 初始值 | 作用与可选值 |
@@ -84,8 +100,9 @@
 | `api_key` | 未设置 | 本群 DeepSeek Key，非空时长度 8～512 字符；空字符串或 reset 清除。查看仅展示 `sk-XX*****XX`，不返回原文 |
 | `model_name` | 未设置 | 本群使用的 DeepSeek 模型，必须属于系统 `allowed_models`；未配置时不能对话 |
 | `reasoning_effort` | `low` | 思考强度，初始允许 `low`、`medium`、`high`；须同时被系统和目标模型支持 |
+| `allow_images` | `false` | 是否将用户本条消息、已核验同群引用消息中的图片传给模型识别；仅接受 true/false，须使用支持图片输入的模型 |
 | `user_mode` | `whitelist` | 普通用户准入方式：whitelist、all 或 blacklist，且须在系统 `allowed_user_modes` 内 |
-| `system_prompt` | 下方默认提示词 | 本群系统提示词，非空文本；初始最多 4000 字符，受系统 `system_prompt_max_chars` 约束 |
+| `system_prompt` | 空字符串 | 本群附加提示词，可为空；初始最多 4000 字符，受系统 `system_prompt_max_chars` 约束 |
 
 准入方式具体含义：
 
@@ -97,12 +114,13 @@
 
 名单通过 `/group-discuss admin user add|remove` 和 `/group-discuss admin blacklist add|remove` 管理。切换模式不清空名单。群 admin/super 继承 user，黑名单或撤销 user 直接授权不能覆盖这种继承；全局 super 始终有管理权和有效 user 权限。
 
-系统默认提示词原文：
+群默认附加提示词为空；通用规则固定加入全局系统提示词：
 
-> 符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容。
-> 使用 Markdown 编写回答，支持标题、列表、引用、代码块、表格和 LaTeX 公式。普通简短回答可直接输出文字；需要排版时在最终回答第一行输出 [[render:card]]，适合纯文字时可输出 [[render:text]]，标记后换行写正文。包含数学公式必须选择 [[render:card]]，公式使用 $...$、$$...$$、\(...\) 或 \[...\]。表格和超过 1000 字符的回答会自动渲染为卡片；文字标记不能绕过自动渲染。不要生成 HTML、脚本或远程图片；来源使用 Markdown 链接。不要自行编造或输出用量统计，统计由机器人附加。
+> 符合社会价值观，不得识别或输出敏感内容，除非群提示词明确拒绝否则允许角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容。
 
-`system_prompt` 同时用于回答和历史摘要。reset 后重新继承系统默认提示词。所有普通用户输入、网页、引用及历史摘要均视为不可信资料，不能覆盖系统规则；修改提示词不会增加电脑控制、跨群访问或绕过预算的能力。若系统字符上限收紧使现有提示词超限，调用暂停，调整提示词后恢复。
+Markdown、text 纯文本、卡片、公式和用量输出规则也由全局固定指令提供。群可通过 system_prompt 添加自己的规则，包括明确禁止角色扮演；留空不会移除全局规则。reset 恢复系统默认附加提示词（初始为空）。已有配置保留原值，不自动迁移；如需清除原提示词，请显式设置 system_prompt 为空。
+
+system_prompt 同时用于回答和历史摘要；所有用户输入、引用、历史和工具结果都不能覆盖系统规则。修改提示词不增加权限或绕过预算。
 
 ## 群配置：会话、预算与上下文
 
@@ -133,7 +151,7 @@
 | 网页读取 | `tools.fetch_webpage.enabled` | `tools.fetch_webpage.max_calls_per_request` | 调用 DeepSeek Fetch 读取公开 HTTP(S) 网页正文 |
 | 群数据查询 | `tools.query_group_data.enabled` | `tools.query_group_data.max_calls_per_request` | 只读查询当前群 DDL，不修改业务数据 |
 | 会话历史 | `tools.read_session_history.enabled` | `tools.read_session_history.max_calls_per_request` | 读取本会话归档，每次最多 8 条消息项，排除思考正文 |
-| 首轮业务命令 | `tools.execute_commands.enabled` | `tools.execute_commands.max_calls_per_request` | 默认关闭；首条用户消息内以发起人身份顺序执行多条 KakoBot 命令，每批及整个首轮最多 5 条不同命令，失败也计入 |
+| 业务命令 | `tools.execute_commands.enabled` | `tools.execute_commands.max_calls_per_request` | 默认关闭；每轮以本轮发言用户身份顺序执行多条 KakoBot 命令，本轮最多 5 条不同命令，失败也计入 |
 | 项目文档查询 | `tools.query_docs.enabled` | `tools.query_docs.max_calls_per_request` | 默认开启，只读搜索、列出和完整读取随插件提供的 docs 文档 |
 
 独立工具执行前检查单工具和总次数，实际执行失败也计次数。内置搜索可包含网页访问，须同时允许搜索和网页读取；DeepSeek 忽略内置搜索的 max_tool_calls，客户端只能记录响应返回的动作并阻止后续超额调用，无法保证单次响应内不超限。
@@ -161,7 +179,7 @@
 | `tool_enabled.fetch_webpage` | `true` | 是否允许各群开启网页读取 |
 | `tool_enabled.query_group_data` | `true` | 是否允许各群开启当前群 DDL 查询 |
 | `tool_enabled.read_session_history` | `true` | 是否允许各群开启本会话历史读取 |
-| `tool_enabled.execute_commands` | `true` | 是否允许各群启用首轮业务命令；群默认关闭 |
+| `tool_enabled.execute_commands` | `true` | 是否允许各群启用业务命令；群默认关闭 |
 | `tool_enabled.query_docs` | `true` | 是否允许各群查询项目文档；默认各群开启 |
 | `system_prompt_max_chars` | 4000 字符 | 群系统提示词长度上限 |
 
@@ -252,7 +270,7 @@ show 查看全部系统设置；set 修改指定项。默认模型白名单已�
 与旧默认值相同的额度升级到本页新默认值，非默认自定义额度保留原数值（旧输入限制原本就按 bytes 执行）。未单独设置的群项继续继承系统策略。升级不清空历史、用量、密钥或权限；迁移完成后记录版本，重启不重复提升管理员后来调整的额度。
 
 
-旧的默认系统提示词自动补充卡片格式指引；自定义群提示词保留。宿主仍统一提供输出协议：AI 可在最终回答第一行使用 [[render:card]] 或 [[render:text]] 选择输出方式，标记不会展示给用户；含公式、表格和长回答不能强制降为文字。卡片渲染不访问任何模型，全程不使用全局 AI Key。
+通用规则及卡片格式指引统一由全局提供；已有群提示词不迁移，保留原值。宿主仍统一提供输出协议：AI 可在最终回答第一行使用 [[render:card]] 或 [[render:text]] 选择输出方式，标记不会展示给用户；含公式、表格和长回答不能强制降为文字。卡片渲染不访问任何模型，全程不使用全局 AI Key。
 
 
 全局违规判定规则可在插件配置的 group_discuss.moderation_prompt 查看和编辑，也可用 /super group-discuss limits show 查看，或由全局 Super 私聊设置：
@@ -267,7 +285,7 @@ show 查看全部系统设置；set 修改指定项。默认模型白名单已�
 
 | 配置项 | 默认 | 初始系统上限 | 说明 |
 | --- | --- | --- | --- |
-| `tools.execute_commands.max_commands_per_request` | 5 | 100 | 私聊每轮或群首轮不同命令总数；失败计入；全局 Super 豁免条数限制 |
+| `tools.execute_commands.max_commands_per_request` | 5 | 100 | 私聊或群聊每轮不同命令总数；失败计入；全局 Super 豁免条数限制 |
 
 全局 Super 可修改 defaults 与 maxima；群 admin 可设置本群值，个人值由 Super 设置。工具调用批次数仍由 max_calls_per_request 单独控制。
 
@@ -279,3 +297,11 @@ show 查看全部系统设置；set 修改指定项。默认模型白名单已�
 ```
 
 执行后程序向用户列出命令及结果，敏感参数脱敏；相同命令复用时明确说明未重复执行。
+
+## 对话中的用户身份组
+
+每次 AI 请求（含工具循环、摘要和业务内部 AI）自动附加程序核验的当前发言用户 QQ 号与有效身份组，无需配置开关。身份组在请求前实时读取，不采用会话创建者、用户自称或历史消息中的身份。
+
+群聊分别提供全局身份组与当前群身份组，包含继承权限、当前群全员 DDL 及 discuss 准入规则产生的身份；按当前平台、机器人和群隔离，不附带其他群的身份。私聊仅提供全局身份组，当前群为空，不枚举用户在其他群的身份。私聊中未提供群身份不代表用户没有相关群权限，指定群的操作仍由业务命令核验。
+
+这些信息用于帮助 AI 理解权限、解释命令，不替代业务命令鉴权，也不会授予额外权限。

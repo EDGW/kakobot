@@ -94,6 +94,7 @@ async def test_current_release_schema_announcement_delivered_once(tmp_path, monk
     await delivery.tick()
     await delivery.tick()
     gateway.send.assert_awaited_once()
-    assert 'group-ddl' in gateway.send.call_args.kwargs['text']
+    from src.infrastructure.storage.broadcasts.updates import load_update
+    assert load_update().strip() in gateway.send.call_args.kwargs['text']
     assert store.pending(ROLE_UPGRADE) == []
     conversations.close()

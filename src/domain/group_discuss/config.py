@@ -17,15 +17,20 @@ TOOLS = (
 )
 LEGACY_SYSTEM_PROMPT = "符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容"
 OUTPUT_INSTRUCTIONS = (
-    "使用 Markdown 编写回答，支持标题、列表、引用、代码块、表格和 LaTeX 公式。"
+    "卡片回答使用 Markdown 编写，支持标题、列表、引用、代码块、表格和 LaTeX 公式。"
     "普通简短回答可直接输出文字；需要排版时在最终回答第一行输出 [[render:card]]，"
     "适合纯文字时可输出 [[render:text]]，标记后换行写正文。"
+    "如果输出为 text（包括未标记的普通文字回答），尽量不要使用 Markdown 符号，用纯文本输出；如果认为需要 Markdown 才能清楚表达意思，请使用 [[render:card]] 输出。"
     r"包含数学公式必须选择 [[render:card]]，公式使用 $...$、$$...$$、\(...\) 或 \[...\]。"
     "表格和超过 1000 字符的回答会自动渲染为卡片；文字标记不能绕过自动渲染。"
     "不要生成 HTML、脚本或远程图片；来源使用 Markdown 链接。"
     "不要自行编造或输出用量统计，统计由机器人附加。"
 )
-DEFAULT_SYSTEM_PROMPT = LEGACY_SYSTEM_PROMPT + "。\n" + OUTPUT_INSTRUCTIONS
+GLOBAL_SYSTEM_PROMPT = "符合社会价值观，不得识别或输出敏感内容，除非群提示词明确拒绝否则允许角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容。"
+DEFAULT_SYSTEM_PROMPT = ""
+
+
+
 DEFAULTS = {
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
     "max_sessions": 5,
@@ -40,6 +45,7 @@ DEFAULTS = {
     "user_mode": "whitelist",
     "model_name": "",
     "reasoning_effort": "low",
+    "allow_images": False,
 }
 MAXIMA = {
     "max_sessions": 20,
@@ -141,10 +147,9 @@ def upgrade_policy_limits(policy):
 def upgrade_tools_policy(policy, fallback=None):
     """Add new tool settings to old nested overrides without changing choices."""
     base = fallback if fallback is not None else system_defaults()
-    if policy["defaults"].get("system_prompt") == LEGACY_SYSTEM_PROMPT:
-        policy["defaults"]["system_prompt"] = DEFAULT_SYSTEM_PROMPT
     for section, keys in {
         "defaults": (
+            "allow_images",
             "tools.query_docs.enabled",
             "tools.query_docs.max_calls_per_request",
             "tools.execute_commands.enabled",
@@ -173,11 +178,10 @@ def validate_group(key, value, policy):
     if key == "system_prompt":
         if (
             not isinstance(value, str)
-            or not value.strip()
             or len(value) > policy["system_prompt_max_chars"]
         ):
             raise BusinessError(
-                f"系统提示词须为非空文本，最多 {policy['system_prompt_max_chars']} 字符。"
+                f"系统提示词须为文本（可为空），最多 {policy['system_prompt_max_chars']} 字符。"
             )
         return
     if key == "api_key":
@@ -190,6 +194,9 @@ def validate_group(key, value, policy):
         lower = 0 if ".max_calls_per_request" in key else 1
         if type(value) is not int or not lower <= value <= policy["maxima"][key]:
             raise BusinessError(f"{key} 允许范围：{lower}～{policy['maxima'][key]}。")
+    elif key == "allow_images":
+        if type(value) is not bool:
+            raise BusinessError("开关必须是 true 或 false。")
     elif key.endswith(".enabled"):
         if type(value) is not bool:
             raise BusinessError("开关必须是 true 或 false。")

@@ -8,8 +8,10 @@ from ...domain.commands import resolve
 from ...domain.deadlines import DeadlineConfirmation
 from ...domain.errors import BusinessError
 from ...infrastructure.group_discuss.store import scope_key
+from ...infrastructure.messaging.messages import visible_text
 from ...infrastructure.model import business_model
 from ...presentation.names import NameDirectory
+from .mentions import automation_command, automation_segments
 
 
 class CommandGateway:
@@ -59,13 +61,22 @@ class BusinessCommands:
         # Neither identity nor conversation scope is supplied by the model.
         if scope_key(turn.ctx) != turn.scope or actor != turn.ctx.actor:
             raise BusinessError("命令执行身份或群上下文不匹配。")
+        # Only DDL creation consumes native mentions as recipient candidates.
+        # Keep other commands' text and transport behavior unchanged.
+        parsed_command = command.split(maxsplit=2)
+        ddl_creation = (len(parsed_command) >= 2 and parsed_command[0].lower() == "/ddl"
+                        and parsed_command[1].lower() in {"add", "add-strict"})
+        parts = automation_segments(command) if ddl_creation else [
+            {"type": "text", "data": {"text": automation_command(command)}}
+        ]
+        command = visible_text(parts).strip()
         ctx = replace(
             turn.ctx,
             actor=actor,
             text=command,
-            segments=[{"type": "text", "data": {"text": command}}],
+            segments=parts,
             mentioned_bot=True,
-            text_only=True,
+            text_only=all(part["type"] == "text" for part in parts),
         )
         parsed = ctx.command
         spec, args = resolve(*parsed) if parsed else (None, "")
@@ -84,6 +95,7 @@ class BusinessCommands:
         if ctx.group:
             await dispatcher.authorizer.require_member(actor, ctx.group, gateway)
         action = None
+        names = NameDirectory(gateway, dispatcher.guard)
         if control is None:
             action = await dispatcher.authorizer.authorize(spec, ctx, args, gateway)
         await turn.check()
@@ -111,15 +123,19 @@ class BusinessCommands:
                     reply = await service.manage(ctx, gateway, global_command, raw)
             else:
                 reply = await dispatcher.execute(
-                    action, gateway, NameDirectory(gateway, dispatcher.guard)
+                    action, gateway, names
                 )
-        messages = list(gateway.card_texts)
+        messages = []
+        refresh_view = False
         for item in reply if isinstance(reply, list) else [reply]:
             if isinstance(item, DeadlineConfirmation):
+                refresh_view |= item.refresh_view
                 item = item.text
             if item:
                 messages.append(str(item))
-        return "\n".join(messages) or "命令执行完成，图片等内容已由原处理器发送。"
+        if refresh_view:
+            await dispatcher.updated_view(ctx, gateway, names)
+        return "\n".join([*gateway.card_texts, *messages]) or "命令执行完成，图片等内容已由原处理器发送。"
 
 
 async def execute_commands(turn, commands):
@@ -153,7 +169,7 @@ async def execute_commands(turn, commands):
         command = command.strip()
         turn.service.guard.secrets.check(command)
         fingerprint = hashlib.sha256(
-            (command if turn.ctx.group else turn.id + "\0" + command).encode()
+            (turn.id + "\0" + command).encode()
         ).hexdigest()
         try:
             previous = store.claim_command(

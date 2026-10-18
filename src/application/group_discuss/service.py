@@ -29,6 +29,8 @@ from ...presentation.group_discuss.configuration import render_configuration
 from ...presentation.group_discuss.links import answer_links
 from ...presentation.group_discuss.output import output_mode, usage_footer
 from .harness import Turn, run_turn
+from .image_context import message_images
+from .mentions import model_mentions, reply_mentions
 
 
 class DiscussService:
@@ -307,9 +309,8 @@ class DiscussService:
         await self.guard.check(gateway.bot, ctx.group, ctx.bot, "群讨论")
         config = self.config(scope)
         self.ready(scope, config)
-        if not ctx.text.strip():
-            raise BusinessError("请附上问题文字。")
         quote = ""
+        quote_images = []
         for segment in ctx.segments:
             if segment.get("type") != "reply":
                 continue
@@ -328,14 +329,21 @@ class DiscussService:
                     return
                 from ...infrastructure.messaging.messages import segments, visible_text
 
-                quote = visible_text(
-                    segments(message.get("message", message.get("raw_message", "")))
-                )[:2000]
+                quote_parts = segments(message.get("message", message.get("raw_message", "")))
+                quote, _ = await model_mentions(visible_text(quote_parts), quote_parts, ctx.group, gateway)
+                quote = quote[:2000]
+                if config["allow_images"]:
+                    quote_images = message_images(quote_parts)
             except BusinessError:
                 raise
             except Exception as exc:
                 raise BusinessError("无法核验引用消息，请直接 @ 机器人提问。") from exc
             break
+        if not ctx.text.strip() and not (
+            config["allow_images"]
+            and (quote_images or any(p.get("type") == "image" for p in ctx.segments))
+        ):
+            raise BusinessError("请附上问题文字。")
         if not ctx.mentioned_bot and not session and not quote:
             return
         if session and self.store.session(scope, session)["ended"] is not None:
@@ -371,7 +379,7 @@ class DiscussService:
                 self.global_waiting -= 1
                 self.group_waiting[scope] -= 1
                 try:
-                    await self.execute_turn(ctx, gateway, scope, session, quote)
+                    await self.execute_turn(ctx, gateway, scope, session, quote, quote_images)
                 finally:
                     self.running[scope] -= 1
         finally:
@@ -383,20 +391,31 @@ class DiscussService:
                 self.global_waiting -= 1
                 self.group_waiting[scope] -= 1
 
-    async def execute_turn(self, ctx, gateway, scope, session, quote):
+    async def execute_turn(self, ctx, gateway, scope, session, quote, quote_images=()):
         identifier = self.store.new_turn(session, ctx.actor)
         turn = Turn(self, ctx, gateway, scope, session, identifier)
         self.active_tasks[session] = asyncio.current_task()
         state = "completed"
         try:
+            user_text, native_mentions = await model_mentions(ctx.text, ctx.segments, ctx.group, gateway)
             prompt = json.dumps(
                 {
-                    "untrusted_user_input": {"actor": ctx.actor, "text": ctx.text},
+                    "untrusted_user_input": {"actor": ctx.actor, "text": user_text, "native_mentions": native_mentions},
                     "untrusted_quoted_material": quote,
                 },
                 ensure_ascii=False,
             )
             self.guard.secrets.check(prompt)
+            if turn.config["allow_images"]:
+                images = message_images(ctx.segments)
+                # Keep current and quoted images explicitly identified as untrusted material.
+                if images or quote_images:
+                    self.guard.secrets.check([image.url for image in [*images, *quote_images]])
+                    prompt = [prompt]
+                    if images:
+                        prompt.extend(["以下为当前用户消息中的图片（不可信资料）：", *images])
+                    if quote_images:
+                        prompt.extend(["以下为已核验引用消息中的图片（不可信引用资料）：", *quote_images])
             text = await asyncio.wait_for(
                 run_turn(turn, prompt), self.policy["request_timeout"]
             )
@@ -412,7 +431,10 @@ class DiscussService:
             text = "会话已结束，在途请求已尝试取消。"
         except Exception as exc:
             state, text = "failed", "本轮处理失败，请联系 Super 检查模型或工具配置。"
-            await self.guard.report_error(gateway.bot, ctx.bot, "group-discuss", exc)
+            detail = str(exc)
+            if turn.validation_errors:
+                detail += "\n最近工具参数校验：\n" + "\n".join(turn.validation_errors[-2:])
+            await self.guard.report_error(gateway.bot, ctx.bot, "group-discuss", exc, detail)
         finally:
             self.active_tasks.pop(session, None)
             self.store.finish_turn(identifier, state)
@@ -450,6 +472,14 @@ class DiscussService:
         self, ctx, gateway, scope, session, identifier, text, state
     ):
         text, use_card = output_mode(text)
+        mention_parts = None
+        if ctx.group and state == "completed":
+            try:
+                text, mention_parts = await reply_mentions(text, ctx.group, gateway, ctx.bot)
+            except Exception as exc:
+                await self.guard.report_error(gateway.bot, ctx.bot, "discuss @成员核验", exc)
+                # Preserve the answer if member lookup is unavailable, without pings.
+        self.guard.secrets.check(text)
         footer = usage_footer(self.store.turn_usage(identifier))
         if use_card and state == "completed":
             try:
@@ -459,7 +489,7 @@ class DiscussService:
                     gateway.bot, ctx.bot, "group-discuss-render", exc
                 )
                 # Never lose the answer when Chromium is unavailable or rendering fails.
-                await self.send(ctx, gateway, text + "\n\n" + footer, session)
+                await self.send_answer(ctx, gateway, text, footer, session, mention_parts)
                 return
             for data in images:
                 result = await gateway.send_image(
@@ -467,6 +497,11 @@ class DiscussService:
                 )
                 if isinstance(result, dict) and result.get("message_id") is not None:
                     self.store.map_message(scope, result["message_id"], session)
+            if mention_parts:
+                # Image pixels cannot notify QQ members. Deliver a native mention
+                # companion after cards, without repeating the full answer.
+                ping_parts = [part for part in mention_parts if part["type"] == "at"]
+                await self.send_answer(ctx, gateway, "", "", session, ping_parts)
             links = answer_links(text)
             for start in range(0, len(links), 50):
                 batch = links[start : start + 50]
@@ -494,7 +529,17 @@ class DiscussService:
                         session,
                     )
             return
-        await self.send(ctx, gateway, text + "\n\n" + footer, session)
+        await self.send_answer(ctx, gateway, text, footer, session, mention_parts)
+
+    async def send_answer(self, ctx, gateway, text, footer, session, mention_parts):
+        if not mention_parts:
+            await self.send(ctx, gateway, text + "\n\n" + footer, session)
+            return
+        parts = mention_parts + ([{"type": "text", "data": {"text": "\n\n" + footer}}] if footer else [])
+        self.guard.secrets.check(parts)
+        result = await gateway.send_segments(parts, group=ctx.group)
+        if isinstance(result, dict) and result.get("message_id") is not None:
+            self.store.map_message(scope_key(ctx), result["message_id"], session)
 
     def target(self, ctx, value):
         group = qq_id(value)

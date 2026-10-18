@@ -16,7 +16,7 @@ from .deadlines.preferences import PreferenceStore
 from .deadlines.tasks import initialize_schema, validate_database
 from .json_store import atomic_json, read_json
 
-VERSION = "2.0.0-beta.2.3"
+VERSION = "2.0.0-rc1"
 ROLE_UPGRADE = VERSION + ":roles-v4"
 
 
@@ -234,6 +234,15 @@ def migrate(directory: Path):
             "2.0.0.beta.2",
             "2.0.0-beta.2.1",
             "2.0.0-beta.2.2",
+            "2.0.0-beta.2.3",
+            "2.0.0-beta.2.4",
+            "2.0.0-beta.2.5",
+            "2.0.0-beta.2.6",
+            "2.0.0-beta.2.7",
+            "2.0.0-beta.2.8",
+            "2.0.0-beta.2.9",
+            "2.0.0-beta.2.10",
+            "2.0.0-beta.2.11",
             "1.0.0",
             "1.0.1",
             "1.0.2",

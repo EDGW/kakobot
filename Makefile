@@ -11,6 +11,7 @@ help:
 	@echo "Override PYTHON or DOCS_ARGS as needed. No upload or push is performed."
 
 docs:
+	$(PYTHON) -m src.tooling.bot_docs
 	$(PYTHON) -m src.tooling.docs_images $(DOCS_ARGS)
 
 publish: docs

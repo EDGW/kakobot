@@ -66,9 +66,21 @@
 | `api_key` | 空 | 用户自己通过 `/discuss apikey = KEY` 设置；Super 仅可 reset 清除，不能查看明文 |
 | `model_name` | 通用 defaults；为空则允许列表第一项 | 初始回退 deepseek-v4-flash；Super 为用户设置且必须在系统白名单内 |
 | `reasoning_effort` | `low` | Super 可设系统允许的 low、medium、high；以供应商实际支持为准 |
-| `system_prompt` | 通用默认安全及 Markdown 输出提示词 | Super 可为用户覆盖，默认最多 4000 字符；用户输入、引用和工具结果始终不可信 |
+| `allow_images` | `false` | Super 可为用户开启图片识别；本条私聊消息可附图，须使用支持图片输入的模型 |
+| `system_prompt` | 空字符串（通用规则由全局提供） | Super 可为用户覆盖，默认最多 4000 字符；用户输入、引用和工具结果始终不可信 |
 
 固定 DeepSeek Responses，接口初始为 https://api.deepseek.com；不读取全局总结/DDL 的 api_key、model_name 或 api_address。
+
+## 图片识别
+
+由全局 Super 私聊设置，示例：
+
+```text
+/super discuss config set 123456 model_name deepseek-flash
+/super discuss config set 123456 allow_images true
+```
+
+开启后，用户可直接发图片或附文字提问；私聊引用仍必须属于自己的 discuss 会话。关闭后图片及归档历史图片不再传给模型，已有文字回答保留。图片使用 OneBot 提供的 HTTP(S) 地址，不在本机下载；地址须可被模型读取，图片费用按供应商 usage 使用个人 Key 结算。与群配置共用 `defaults.allow_images`，旧配置缺少该项自动补为 false；不展开合并转发。更多限制见[群图片识别说明](../group-discuss/configuration.md)。
 
 ## 会话与用量配置
 
@@ -147,7 +159,7 @@ allowed_user_modes、defaults.user_mode、defaults.max_sessions 与群查询工�
 
 | 配置项 | 默认 | 初始系统上限 | 说明 |
 | --- | --- | --- | --- |
-| `tools.execute_commands.max_commands_per_request` | 5 | 100 | 私聊每轮或群首轮不同命令总数；失败计入；全局 Super 豁免条数限制 |
+| `tools.execute_commands.max_commands_per_request` | 5 | 100 | 私聊或群聊每轮不同命令总数；失败计入；全局 Super 豁免条数限制 |
 
 全局 Super 可修改 defaults 与 maxima；群 admin 可设置本群值，个人值由 Super 设置。工具调用批次数仍由 max_calls_per_request 单独控制。
 
@@ -159,3 +171,15 @@ allowed_user_modes、defaults.user_mode、defaults.max_sessions 与群查询工�
 ```
 
 执行后程序向用户列出命令及结果，敏感参数脱敏；相同命令复用时明确说明未重复执行。
+
+## 对话中的用户身份组
+
+每次 AI 请求（含工具循环、摘要和业务内部 AI）自动附加程序核验的当前发言用户 QQ 号与有效身份组，无需配置开关。身份组在请求前实时读取，不采用会话创建者、用户自称或历史消息中的身份。
+
+群聊分别提供全局身份组与当前群身份组，包含继承权限、当前群全员 DDL 及 discuss 准入规则产生的身份；按当前平台、机器人和群隔离，不附带其他群的身份。私聊仅提供全局身份组，当前群为空，不枚举用户在其他群的身份。私聊中未提供群身份不代表用户没有相关群权限，指定群的操作仍由业务命令核验。
+
+这些信息用于帮助 AI 理解权限、解释命令，不替代业务命令鉴权，也不会授予额外权限。
+
+## 文字与卡片输出
+
+AI 使用 text（含未标记的普通文字回答）时尽量不使用 Markdown 符号，以纯文本输出；需要 Markdown 才能表达清楚时使用 `[[render:card]]` 输出。公式、表格及长回答继续遵循自动卡片规则。

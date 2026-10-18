@@ -2,11 +2,23 @@
 
 
 def usage_footer(usage):
-    return (
-        f"tokens input: {usage['input']}(+{usage['cached']}) "
-        f"output: {usage['output']}. toolcall(s) {usage['tools']}.\n"
-        f"搜索/网页来源：{usage['search_source']}。"
+    names = {"dialogue": "对话", "summary": "摘要", "business": "业务内部AI", "unknown": "历史未分类"}
+    sources = "；".join(
+        f"{names.get(key, key)} {item['requests']}次（输入{item['input']}，输出{item['output']}"
+        + (f"，另有{item['unknown']}次用量未知" if item["unknown"] else "") + "）"
+        for key, item in usage.get("sources", {}).items()
     )
+    text = (
+        f"tokens input: {usage['input']}（其中缓存命中 {usage['cached']}） "
+        f"output: {usage['output']}. toolcall(s) {usage['tools']}.\n"
+        f"模型请求 {usage.get('requests', 0)} 次。"
+        + (f"来源：{sources}。" if sources else "")
+        + f"\n搜索/网页来源：{usage['search_source']}。"
+    )
+    if usage.get("unknown_requests"):
+        text += f"\n另有 {usage['unknown_requests']} 次请求用量未确认，预算预留 {usage['reserved_unknown']}；预留不是实际用量。"
+    return text
+
 
 
 RENDER_CARD = "[[render:card]]"

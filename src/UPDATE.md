@@ -1,1 +1,1 @@
-KakoBot v2.0.0-beta.2.3：全员开关改为 /super role group-ddl on|off，旧全员 admin 自动转为仅 ddl，撤销全员 admin、summary，保留单独授权。业务命令提示词同步当前条数限制及 Super 豁免身份。
+KakoBot v2.0.0-rc1：首个 2.0 候选版本，整合群与个人 AI 对话、图片识别、身份组上下文及受控业务命令。AI 创建 DDL 保留完整信息并自动发送预览；文档和帮助图片已更新。升级保留已有数据及提示词配置。

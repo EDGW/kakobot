@@ -80,3 +80,5 @@ make docs DOCS_ARGS="--docs docs --output docs/pics --width 1200 --font-size 25"
 未发布变更只写入 `CHANGELOG.md` 最前面的 `# Dev`，没有则新建。发布具体版本时将该 Dev 标题改为版本号；一旦条目有了版本号，其正文保持不变。修正、补充或后续行为变化都属于下一轮 Dev，不回写历史版本。
 
 整理历史误写内容时，以发布标签内的 CHANGELOG.md 为基准，把发布后 commit 的变更摘到 Dev，并逐字核对已发布条目。当前已将 v1.3.0 发布后的新增说明从 v1.3.0 中摘出；v1.3.0 及更早正文与 v1.3.0 标签一致。发布工作流支持一级或二级版本标题，从指定标签的条目提取发布说明。
+
+Bot 文档由 `python -m src.tooling.bot_docs` 从 docs/ 无损生成到 docs-bot/，make docs 和打包都会刷新；运行时按相同算法从当前用户文档生成，避免陈旧副本。包内保留两套文档。calls 表按列存在性补齐 purpose，历史值为 unknown，新请求区分 dialogue、summary、business，不修改原用量。

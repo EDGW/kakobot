@@ -313,6 +313,18 @@ class OneBotGateway:
         finally:
             _FORMAT_TEXT.reset(token)
 
+    async def send_segments(self, parts: list[dict], *, group: str):
+        """Send host-validated text and native member mentions through the guard."""
+        if not parts or any(part.get("type") not in {"text", "at"} for part in parts):
+            raise ValueError("仅支持文字和成员@。")
+        for part in parts:
+            if part["type"] == "at":
+                qq_id(part["data"]["qq"])
+        return await self.bot.call_action(
+            "send_group_msg", group_id=int(qq_id(group)),
+            self_id=self.self_id, message=parts,
+        )
+
     async def history(self, group: str) -> list[dict]:
         result = await self.bot.call_action(
             "get_group_msg_history",

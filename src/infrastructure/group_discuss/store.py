@@ -90,6 +90,8 @@ class DiscussStore:
                     CREATE TABLE IF NOT EXISTS secrets (
                         scope TEXT PRIMARY KEY, value BLOB NOT NULL);
                 """)
+                if "purpose" not in {r[1] for r in self.db.execute("PRAGMA table_info(calls)")}:
+                    self.db.execute("ALTER TABLE calls ADD COLUMN purpose TEXT NOT NULL DEFAULT 'unknown'")
                 if "turn" not in {
                     r[1] for r in self.db.execute("PRAGMA table_info(command_runs)")
                 }:
@@ -392,26 +394,20 @@ class DiscussStore:
         return identifier
 
     def command_actor(self, scope, session, turn):
-        """Private turns allow commands throughout; group turns only on the first."""
+        """Use the immutable actor of this pending turn in either conversation type."""
         saved = self.session(scope, session)
         current = self.db.execute(
             "SELECT * FROM turns WHERE session=? AND id=?", (session, turn)
         ).fetchone()
-        private = len(json.loads(scope)) == 4 and json.loads(scope)[2] == "CHAT"
-        first = self.db.execute(
-            "SELECT id FROM turns WHERE session=? ORDER BY rowid LIMIT 1", (session,)
-        ).fetchone()
         if (
             saved["ended"] is not None
             or current is None
-            or (not private and first["id"] != turn)
-            or current["actor"] != saved["actor"]
             or current["state"] != "pending"
         ):
             raise BusinessError(
-                "业务命令须由会话发起人在当前有效轮次执行，群聊仅限新会话首轮。"
+                "业务命令须在当前有效轮次执行。"
             )
-        return saved["actor"]
+        return current["actor"]
 
     def claim_command(self, scope, session, turn, fingerprint, *, limit=5):
         with self.db:
@@ -427,12 +423,12 @@ class DiscussStore:
                     )
                 return json.loads(self.cipher.decrypt(row["result"]))
             count = self.db.execute(
-                "SELECT COUNT(*) FROM command_runs WHERE session=? AND (?=0 OR turn=?)",
-                (session, int(len(json.loads(scope)) == 4), turn),
+                "SELECT COUNT(*) FROM command_runs WHERE session=? AND turn=?",
+                (session, turn),
             ).fetchone()[0]
             if limit is not None and count >= limit:
                 raise BusinessError(
-                    f"群聊首轮或私聊本轮最多执行 {limit} 条不同业务命令（失败也计入）。"
+                    f"本轮最多执行 {limit} 条不同业务命令（失败也计入）。"
                 )
             self.db.execute(
                 "INSERT INTO command_runs(session,fingerprint,turn) VALUES (?,?,?)",
@@ -488,7 +484,7 @@ class DiscussStore:
             value["remaining"] = max(0, value["limit"] - value["charged_or_reserved"])
         return result
 
-    def reserve(self, scope, session, turn, amount, config, policy):
+    def reserve(self, scope, session, turn, amount, config, policy, *, purpose="unknown"):
         identifier, day = uuid4().hex, day_key()
         bot_scope = json.dumps(json.loads(scope)[:2], separators=(",", ":"))
         with self.db:
@@ -520,7 +516,7 @@ class DiscussStore:
                     # End after rollback in the caller for the session-only case.
                     raise BusinessError(reason)
             self.db.execute(
-                "INSERT INTO calls(id,turn,session,scope,bot_scope,day,reserved,charged,created,model) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO calls(id,turn,session,scope,bot_scope,day,reserved,charged,created,model,purpose) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identifier,
                     turn,
@@ -532,6 +528,7 @@ class DiscussStore:
                     amount,
                     time.time(),
                     config["model_name"],
+                    purpose,
                 ),
             )
         return identifier
@@ -625,6 +622,16 @@ class DiscussStore:
                 if len(known) == len(rows)
                 else (f"至少 {sum(known)}（另有未知）" if known else "未知")
             )
+        result["requests"] = len(rows)
+        result["sources"] = {}
+        for row in rows:
+            item = result["sources"].setdefault(row["purpose"], {"requests": 0, "input": 0, "output": 0, "unknown": 0})
+            item["requests"] += 1
+            item["input"] += row["input"] or 0
+            item["output"] += row["output"] or 0
+            item["unknown"] += int(row["input"] is None or row["output"] is None)
+        result["reserved_unknown"] = sum(row["charged"] for row in rows if row["state"] in {"pending", "unknown"})
+        result["unknown_requests"] = sum(row["state"] in {"pending", "unknown"} for row in rows)
         result["tools"] = self.db.execute(
             "SELECT tool_calls FROM turns WHERE id=?", (turn,)
         ).fetchone()[0]
@@ -690,7 +697,15 @@ class DiscussStore:
                 item["input"] += row["input"] or 0
                 item["output"] += row["output"] or 0
             breakdown[key] = values
+        by_purpose = {}
+        for row in rows:
+            item = by_purpose.setdefault(row["purpose"], {"requests": 0, "input": 0, "output": 0, "unknown_requests": 0})
+            item["requests"] += 1
+            item["input"] += row["input"] or 0
+            item["output"] += row["output"] or 0
+            item["unknown_requests"] += int(row["input"] is None or row["output"] is None)
         return {
+            "by_purpose": by_purpose,
             "active_sessions": len(self.sessions(scope)),
             "requests": len(rows),
             "input_tokens": sum(r["input"] or 0 for r in rows),

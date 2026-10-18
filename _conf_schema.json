@@ -117,6 +117,11 @@
             "type": "string",
             "default": "low"
           },
+          "allow_images": {
+            "description": "允许识别对话图片（须使用支持图片输入的模型）",
+            "type": "bool",
+            "default": false
+          },
           "tools.search_web.enabled": {
             "description": "tools.search_web.enabled",
             "type": "bool",
@@ -158,9 +163,9 @@
             "default": 9
           },
           "system_prompt": {
-            "description": "群默认系统提示词，群 admin 可覆盖",
+            "description": "群默认附加提示词，默认空；通用安全和输出规则由全局固定指令提供",
             "type": "string",
-            "default": "符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容。\n使用 Markdown 编写回答，支持标题、列表、引用、代码块、表格和 LaTeX 公式。普通简短回答可直接输出文字；需要排版时在最终回答第一行输出 [[render:card]]，适合纯文字时可输出 [[render:text]]，标记后换行写正文。包含数学公式必须选择 [[render:card]]，公式使用 $...$、$$...$$、\\(...\\) 或 \\[...\\]。表格和超过 1000 字符的回答会自动渲染为卡片；文字标记不能绕过自动渲染。不要生成 HTML、脚本或远程图片；来源使用 Markdown 链接。不要自行编造或输出用量统计，统计由机器人附加。"
+            "default": ""
           },
           "tools.query_docs.enabled": {
             "description": "项目文档查询（默认开启）",

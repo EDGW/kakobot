@@ -10,6 +10,7 @@ SECTIONS = [
             "api_key": "DeepSeek API Key",
             "model_name": "模型",
             "reasoning_effort": "思考强度",
+            "allow_images": "允许识图",
             "user_mode": "用户准入",
         },
     ),
