@@ -2,7 +2,7 @@
 
 [命令目录](../README.md) · [Super 目录](README.md)
 
-本组涉及以下身份组（不新增身份组）：
+本组涉及以下身份组：
 
 - `super`：仅配置 super_user 指定。
 
@@ -16,7 +16,11 @@
 
 **所需权限组**：`super`
 
-Super 管理帮助。
+查看当前会话可以使用的全部 Super 管理命令，按功能分类展示语法与用途。它与不带分类的 `/super help` 等价。
+
+```text
+/super
+```
 
 ### `/super` - GROUP
 
@@ -24,7 +28,11 @@ Super 管理帮助。
 
 **所需权限组**：`super`
 
-须先真实 @机器人。Super 管理帮助。
+查看当前会话可以使用的全部 Super 管理命令，按功能分类展示语法与用途。它与不带分类的 `/super help` 等价。
+
+```text
+/super
+```
 
 ## `/super help` 命令
 
@@ -34,7 +42,15 @@ Super 管理帮助。
 
 **所需权限组**：`super`
 
-分类查看管理帮助。
+省略分类时显示全部管理帮助；提供分类名时只显示该组。可选分类为 role、ddl、schedule、request、cost、announce、readonly。
+
+也可以继续指定子命令缩小范围，例如 `/super help ddl edit`；不存在或在当前位置不可用的分类/命令返回“没有可用的对应命令”。
+
+```text
+/super help
+/super help role
+/super help ddl edit
+```
 
 ### `/super help` - GROUP
 
@@ -42,8 +58,12 @@ Super 管理帮助。
 
 **所需权限组**：`super`
 
-须先真实 @机器人。分类查看管理帮助。
+省略分类时显示全部管理帮助；提供分类名时只显示该组。可选分类为 role、ddl、schedule、request、cost、announce、readonly。
 
-## 使用规则与示例
+也可以继续指定子命令缩小范围，例如 `/super help ddl edit`；不存在或在当前位置不可用的分类/命令返回“没有可用的对应命令”。
 
-`/super` 与 `/super help` 查看全部管理帮助；`/super help role`、`/super help ddl`、`/super help schedule` 等查看分类。非 Super 的普通帮助不会展示这些入口。
+```text
+/super help
+/super help role
+/super help ddl edit
+```

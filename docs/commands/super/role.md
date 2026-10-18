@@ -2,7 +2,7 @@
 
 [命令目录](../README.md) · [Super 目录](README.md)
 
-本组涉及以下身份组（不新增身份组）：
+本组涉及以下身份组：
 
 - `super`：管理权限。
 - `admin`、`autoanalysis`、`ddl`、`summary`：可管理的全局组。
@@ -18,7 +18,16 @@
 
 **所需权限组**：`super`
 
-查询指定用户的直接及有效权限。私聊群身份组写作 群号.admin/ddl/summary。
+查询一个或多个指定用户的权限，不修改授权。显示直接授权、有效权限及每项权限的来源（直接授予、继承、全员模式）。
+
+`QQ[,QQ]` 为必填用户列表，英文逗号分隔，最多100人；`--page` 为正整数，默认1，每页20人，越界会提示。
+
+显示全局权限及各群权限。
+
+```text
+/super role show 111,222
+/super role show 111,222 --page 1
+```
 
 ### `/super role show` - GROUP
 
@@ -26,7 +35,16 @@
 
 **所需权限组**：`super`
 
-须先真实 @机器人。查询指定用户的直接及有效权限。群身份组写作 group.admin/group.ddl/group.summary，群范围只能是本群；全局授权仍可管理。
+查询一个或多个指定用户的权限，不修改授权。显示直接授权、有效权限及每项权限的来源（直接授予、继承、全员模式）。
+
+`QQ[,QQ]` 为必填用户列表，英文逗号分隔，最多100人；`--page` 为正整数，默认1，每页20人，越界会提示。
+
+显示全局权限及本群权限，不展示其他群授权。
+
+```text
+/super role show 111,222
+/super role show 111,222 --page 1
+```
 
 ## `/super role list` 命令
 
@@ -36,7 +54,23 @@
 
 **所需权限组**：`super`
 
-按身份组、群和来源筛选成员。私聊群身份组写作 群号.admin/ddl/summary。
+按身份组、群和权限来源筛选用户，省略 ROLE 时列出查询范围内有有效授权的用户。
+
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`；群角色使用 `群号.admin`、`群号.ddl`、`群号.summary`，例如 `3333.ddl`。
+
+- `--group 群号`：仅保留该群实际成员，并查询该群角色；与 ROLE 中的群号同时出现时须一致。 私聊不指定群时按角色或已知授权范围查询。
+- `--source direct`：匹配直接授权来源。
+- `--source inherited`：匹配通过上级身份组继承的权限。
+- `--source everyone`：匹配全员 group.admin 模式产生的权限。
+- 不指定 source 时不按来源筛选；来源筛选用于筛选人员，展示仍包含其权限说明。
+- `--page`：正整数，默认1，每页20人。
+
+此命令只查询，不改变权限。
+
+```text
+/super role list autoanalysis --source inherited
+/super role list --group 3333 --page 2
+```
 
 ### `/super role list` - GROUP
 
@@ -44,7 +78,23 @@
 
 **所需权限组**：`super`
 
-须先真实 @机器人。按身份组、群和来源筛选成员。群身份组写作 group.admin/group.ddl/group.summary，群范围只能是本群；全局授权仍可管理。
+按身份组、群和权限来源筛选用户，省略 ROLE 时列出查询范围内有有效授权的用户。
+
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary`，仅代表当前群。
+
+- `--group 群号`：仅保留该群实际成员，并查询该群角色；与 ROLE 中的群号同时出现时须一致。 群内只能指定本群，省略时默认本群。
+- `--source direct`：匹配直接授权来源。
+- `--source inherited`：匹配通过上级身份组继承的权限。
+- `--source everyone`：匹配全员 group.admin 模式产生的权限。
+- 不指定 source 时不按来源筛选；来源筛选用于筛选人员，展示仍包含其权限说明。
+- `--page`：正整数，默认1，每页20人。
+
+此命令只查询，不改变权限。
+
+```text
+/super role list autoanalysis --source inherited
+/super role list --group 3333 --page 2
+```
 
 ## `/super role add` 命令
 
@@ -54,7 +104,17 @@
 
 **所需权限组**：`super`
 
-批量添加直接授权。私聊群身份组写作 群号.admin/ddl/summary。
+为列表中的每个用户添加列表中的每项直接授权，保留其所有其他授权。已持有的直接授权不会重复添加。
+
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`；群角色使用 `群号.admin`、`群号.ddl`、`群号.summary`，例如 `3333.ddl`。
+
+QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整数。配置的 `super` 可查询，不能通过命令授予、移除或覆盖。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role add 111,222 ddl,3333.ddl --dry-run
+```
 
 ### `/super role add` - GROUP
 
@@ -62,7 +122,17 @@
 
 **所需权限组**：`super`
 
-须先真实 @机器人。批量添加直接授权。群身份组写作 group.admin/group.ddl/group.summary，群范围只能是本群；全局授权仍可管理。
+为列表中的每个用户添加列表中的每项直接授权，保留其所有其他授权。已持有的直接授权不会重复添加。
+
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary`，仅代表当前群。
+
+QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整数。配置的 `super` 可查询，不能通过命令授予、移除或覆盖。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role add 111,222 ddl,group.ddl --dry-run
+```
 
 ## `/super role remove` 命令
 
@@ -72,7 +142,19 @@
 
 **所需权限组**：`super`
 
-批量移除直接授权，保留继承权限。私聊群身份组写作 群号.admin/ddl/summary。
+从每个指定用户移除明确列出的直接授权，不改变其余授权，也不会屏蔽从上级身份组继承的权限。
+
+例如用户经 admin 继承 ddl，仅移除 ddl 的直接授权后，仍然拥有有效 ddl；若要撤销该权限，须处理产生继承的授权来源。
+
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`；群角色使用 `群号.admin`、`群号.ddl`、`群号.summary`，例如 `3333.ddl`。
+
+QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整数。配置的 `super` 可查询，不能通过命令授予、移除或覆盖。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role remove 111,222 3333.ddl --dry-run
+```
 
 ### `/super role remove` - GROUP
 
@@ -80,7 +162,19 @@
 
 **所需权限组**：`super`
 
-须先真实 @机器人。批量移除直接授权，保留继承权限。群身份组写作 group.admin/group.ddl/group.summary，群范围只能是本群；全局授权仍可管理。
+从每个指定用户移除明确列出的直接授权，不改变其余授权，也不会屏蔽从上级身份组继承的权限。
+
+例如用户经 admin 继承 ddl，仅移除 ddl 的直接授权后，仍然拥有有效 ddl；若要撤销该权限，须处理产生继承的授权来源。
+
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary`，仅代表当前群。
+
+QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整数。配置的 `super` 可查询，不能通过命令授予、移除或覆盖。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role remove 111,222 group.ddl --dry-run
+```
 
 ## `/super role set` 命令
 
@@ -90,7 +184,19 @@
 
 **所需权限组**：`super`
 
-替换指定范围的直接授权。私聊群身份组写作 群号.admin/ddl/summary。
+将每个指定用户在单一范围内的全部直接授权替换为 ROLE 列表，范围之外保持原样。与 add 不同，未出现在列表中的原直接授权会被移除。
+
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`；群角色使用 `群号.admin`、`群号.ddl`、`群号.summary`，例如 `3333.ddl`。
+
+`--scope` 必填：`global` 表示全局，`group:群号` 表示单个群；ROLE 必须全部属于该范围，不允许混入全局和群角色。
+
+QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整数。配置的 `super` 可查询，不能通过命令授予、移除或覆盖。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role set 111,222 ddl,summary --scope global --dry-run
+```
 
 ### `/super role set` - GROUP
 
@@ -98,7 +204,19 @@
 
 **所需权限组**：`super`
 
-须先真实 @机器人。替换指定范围的直接授权。群身份组写作 group.admin/group.ddl/group.summary，群范围只能是本群；全局授权仍可管理。
+将每个指定用户在单一范围内的全部直接授权替换为 ROLE 列表，范围之外保持原样。与 add 不同，未出现在列表中的原直接授权会被移除。
+
+`ROLE` 可写全局 `admin`、`autoanalysis`、`ddl`、`summary`，群角色使用 `group.admin`、`group.ddl`、`group.summary`，仅代表当前群。
+
+`--scope` 必填：`global` 表示全局，`group:群号` 表示单个群；ROLE 必须全部属于该范围，不允许混入全局和群角色。 群内还可用 `--scope group` 表示本群，不得指定其他群。
+
+QQ 和 ROLE 列表以英文逗号分隔，各最多100项；QQ 必须为正整数。配置的 `super` 可查询，不能通过命令授予、移除或覆盖。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role set 111,222 group.ddl --scope group --dry-run
+```
 
 ## `/super role clear` 命令
 
@@ -108,7 +226,17 @@
 
 **所需权限组**：`super`
 
-批量清除指定范围直接授权。私聊群身份组写作 群号.admin/ddl/summary。
+清空指定用户在明确范围内的全部直接授权。它不接受 ROLE 列表；仅移除某项角色请用 remove。不会撤销其他来源的继承或全员模式权限，也不取消已有 DDL。
+
+`--scope` 必填：`global` 清空全局直接授权，`group:群号` 清空单群直接授权。 `all` 同时清空全局及所有已知群的直接授权，仅私聊可用。
+
+QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role clear 111,222 --scope group:3333 --dry-run
+```
 
 ### `/super role clear` - GROUP
 
@@ -116,7 +244,17 @@
 
 **所需权限组**：`super`
 
-须先真实 @机器人。批量清除指定范围直接授权。群身份组写作 group.admin/group.ddl/group.summary，群范围只能是本群；全局授权仍可管理。
+清空指定用户在明确范围内的全部直接授权。它不接受 ROLE 列表；仅移除某项角色请用 remove。不会撤销其他来源的继承或全员模式权限，也不取消已有 DDL。
+
+`--scope` 必填：`global` 清空全局直接授权，`group:群号` 清空单群直接授权。 群内可用 `group` 表示本群，不能指定其他群或 all。
+
+QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role clear 111,222 --scope group --dry-run
+```
 
 ## `/super role reset` 命令
 
@@ -126,7 +264,19 @@
 
 **所需权限组**：`super`
 
-清空群的全部或指定直接身份组名单。私聊群身份组写作 群号.admin/ddl/summary。
+针对群的授权名单操作：移除目标群里所有人所持有的指定直接群身份组，而不是只清理某几个用户。
+
+群号必填，多个群用英文逗号分隔，最多100群。
+
+`--roles` 省略时清空 group.admin、group.ddl、group.summary 三种直接授权；提供时只清空列出的角色，使用英文逗号分隔。roles 使用 `group.ddl` 这样的名称。
+
+不改变全局授权、不关闭全员 group.admin 模式，也不取消现有 DDL；其他继承或全员模式仍可能让用户保持有效权限。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role reset 3333,4444 --roles group.ddl,group.summary --dry-run
+```
 
 ### `/super role reset` - GROUP
 
@@ -134,7 +284,19 @@
 
 **所需权限组**：`super`
 
-须先真实 @机器人。清空群的全部或指定直接身份组名单。群身份组写作 group.admin/group.ddl/group.summary，群范围只能是本群；全局授权仍可管理。
+针对群的授权名单操作：移除目标群里所有人所持有的指定直接群身份组，而不是只清理某几个用户。
+
+群号可省略，默认本群；显式群号也只能是本群。
+
+`--roles` 省略时清空 group.admin、group.ddl、group.summary 三种直接授权；提供时只清空列出的角色，使用英文逗号分隔。roles 使用 `group.ddl` 这样的名称。
+
+不改变全局授权、不关闭全员 group.admin 模式，也不取消现有 DDL；其他继承或全员模式仍可能让用户保持有效权限。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role reset --roles group.ddl,group.summary --dry-run
+```
 
 ## `/super role group-admin` 命令
 
@@ -144,7 +306,21 @@
 
 **所需权限组**：`super`
 
-开关全员 group.admin 模式，保留直接名单。私聊群身份组写作 群号.admin/ddl/summary。
+切换群的“全员 group.admin”模式，不改动已保存的直接授权名单。
+
+- `on`：所有实际群成员获得 group.admin，并继承 group.ddl 与 group.summary。
+- `off`：恢复按授权名单及继承关系判断；不会清空原直接授权。
+
+必须提供群号；多个群用英文逗号分隔，最多100群。
+
+这是机器人内部权限开关，不改变 QQ 原生群管理员身份。
+
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
+
+```text
+/super role group-admin on 3333,4444 --dry-run
+/super role group-admin off 3333,4444
+```
 
 ### `/super role group-admin` - GROUP
 
@@ -152,23 +328,18 @@
 
 **所需权限组**：`super`
 
-须先真实 @机器人。开关全员 group.admin 模式，保留直接名单。群身份组写作 group.admin/group.ddl/group.summary，群范围只能是本群；全局授权仍可管理。
+切换群的“全员 group.admin”模式，不改动已保存的直接授权名单。
 
-## 使用规则与示例
+- `on`：所有实际群成员获得 group.admin，并继承 group.ddl 与 group.summary。
+- `off`：恢复按授权名单及继承关系判断；不会清空原直接授权。
 
-所有修改命令均支持 `--dry-run`。群内 `--scope group` 可指本群。
+省略群号时作用于本群，不能指定其他群。
 
-全局组为 `super`、`admin`、`autoanalysis`、`ddl`、`summary`。`super` 可查询，但只能通过配置修改。群内使用 `group.admin`、`group.ddl`、`group.summary`；私聊使用 `3333.admin`、`3333.ddl`、`3333.summary`。
+这是机器人内部权限开关，不改变 QQ 原生群管理员身份。
 
-`remove/clear/reset` 只改变直接授权，不屏蔽继承权限。`reset` 不关闭全员模式，不改全局授权，也不取消既有任务。
+支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
 
 ```text
-/super role add 111,222 ddl,summary
-/super role add 111,222 3333.ddl,4444.summary
-/super role list autoanalysis --source inherited
-/super role list --group 3333 --page 2
-/super role set 111,222 ddl --scope global --dry-run
-/super role clear 111,222 --scope group:3333
-/super role reset 3333,4444 --roles group.ddl
-/super role group-admin off 3333,4444
+/super role group-admin on --dry-run
+/super role group-admin off
 ```

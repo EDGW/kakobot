@@ -2,7 +2,7 @@
 
 [命令目录](README.md) · [Super 管理](super/README.md)
 
-本组涉及以下身份组（不新增身份组）：
+本组涉及以下身份组：
 
 - 无；所有用户可用。
 
@@ -14,7 +14,15 @@
 
 **所需权限组**：无；所有用户可用。
 
-查看本人全局身份组和全部群身份组，包含有效权限与继承来源。
+查看本人的全局身份组，以及全部已知群的身份组。
+
+输出区分直接授权和有效权限，并给出继承等来源。不接受其他用户 QQ、角色名或修改参数；授予和撤销使用 [Super 身份组命令](super/role.md)。
+
+全局继承为 `super → admin → autoanalysis → ddl、summary`；群内继承为 `group.admin → group.ddl、group.summary`。群身份组按群隔离，不代表 QQ 原生管理员。
+
+```text
+/role
+```
 
 ### `/role` - GROUP
 
@@ -22,10 +30,12 @@
 
 **所需权限组**：无；所有用户可用。
 
-须先真实 @机器人。查看本人全局身份组与当前群身份组，不展示其他群的授权。
+查看本人的全局身份组，以及当前群的身份组，不展示其他群的授权。
 
-## 使用规则与示例
+输出区分直接授权和有效权限，并给出继承等来源。不接受其他用户 QQ、角色名或修改参数；授予和撤销使用 [Super 身份组命令](super/role.md)。
 
-全局权限继承：`super → admin → autoanalysis → ddl、summary`；群内继承：`group.admin → group.ddl、group.summary`。群身份组按群隔离，与 QQ 原生管理员无关。
+全局继承为 `super → admin → autoanalysis → ddl、summary`；群内继承为 `group.admin → group.ddl、group.summary`。群身份组按群隔离，不代表 QQ 原生管理员。
 
-这里只查询本人权限，授权与撤销见 [Super 身份组管理](super/role.md)。
+```text
+/role
+```
