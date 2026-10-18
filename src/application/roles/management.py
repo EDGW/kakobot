@@ -63,7 +63,7 @@ class SuperRoleService:
             "set": ("scope",),
             "clear": ("scope",),
             "reset": ("roles",),
-            "group-admin": (),
+            "group-ddl": (),
         }[sub]
         values, opts = arguments(
             action.arguments,
@@ -75,11 +75,11 @@ class SuperRoleService:
         original = self.roles.data
         data = copy.deepcopy(original)
         touched = set()
-        if sub in {"reset", "group-admin"}:
-            minimum, maximum = (1, 2) if sub == "group-admin" else (0, 1)
+        if sub in {"reset", "group-ddl"}:
+            minimum, maximum = (1, 2) if sub == "group-ddl" else (0, 1)
             if not minimum <= len(values) <= maximum:
                 raise BusinessError("用法：" + action.spec.usage)
-            if sub == "group-admin" and values[0].lower() not in {"on", "off"}:
+            if sub == "group-ddl" and values[0].lower() not in {"on", "off"}:
                 raise BusinessError("开关须为 on 或 off。")
             raw_groups = values[-1] if len(values) == maximum else "this"
             if not ctx.group and raw_groups == "this":
@@ -89,8 +89,8 @@ class SuperRoleService:
             if not set(selected) <= GROUP_ROLES:
                 raise BusinessError("--roles 仅接受：" + "、".join(sorted(GROUP_ROLES)))
             for group in groups:
-                if sub == "group-admin":
-                    data["group_admin_enabled"][group] = values[0].lower() != "on"
+                if sub == "group-ddl":
+                    data["group_ddl_everyone"][group] = values[0].lower() == "on"
                 else:
                     for role in selected:
                         entries = self.roles.entries(
@@ -101,20 +101,20 @@ class SuperRoleService:
                             entries[role] = []
             labels = [await names.group(group) for group in groups]
             prefix = (
-                "全员 group.admin 模式"
-                if sub == "group-admin"
+                "全员 group.ddl 模式"
+                if sub == "group-ddl"
                 else "清空群直接授权名单"
             )
             description = prefix + "：" + "、".join(labels)
-            if sub == "group-admin":
+            if sub == "group-ddl":
                 description += "；" + values[0].lower()
             else:
                 description += "；身份组：" + ",".join(selected)
                 if any(
-                    not data["group_admin_enabled"].get(group, True) for group in groups
+                    data["group_ddl_everyone"].get(group, False) for group in groups
                 ):
                     description += (
-                        "\n全员 group.admin 模式仍为 on；reset 不改变此开关。"
+                        "\n全员 group.ddl 模式仍为 on；reset 不改变此开关。"
                     )
         else:
             if len(values) != (1 if sub == "clear" else 2):
@@ -249,13 +249,13 @@ class SuperRoleService:
             for user, role in sorted(pairs)
         ]
         for group in sorted(
-            set(before["group_admin_enabled"]) | set(after["group_admin_enabled"])
+            set(before["group_ddl_everyone"]) | set(after["group_ddl_everyone"])
         ):
-            old_switch = before["group_admin_enabled"].get(group, True)
-            new_switch = after["group_admin_enabled"].get(group, True)
+            old_switch = before["group_ddl_everyone"].get(group, False)
+            new_switch = after["group_ddl_everyone"].get(group, False)
             if old_switch != new_switch:
                 lines.append(
-                    f"群 {group} 全员模式：{'off' if old_switch else 'on'} → {'off' if new_switch else 'on'}"
+                    f"群 {group} 全员模式：{'on' if old_switch else 'off'} → {'on' if new_switch else 'off'}"
                 )
         return lines
 
@@ -317,7 +317,7 @@ class SuperRoleService:
                 if source_filter == "inherited"
                 else origin
                 in {
-                    "全员 group.admin 模式",
+                    "全员 group.ddl 模式",
                     "全员 discuss 模式",
                     "discuss 黑名单模式（未列入）",
                 }

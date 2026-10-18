@@ -36,7 +36,7 @@
 
 升级前停止旧插件，备份整个数据目录。版本标记缺失时视为0.5.4，先备份、迁移并校验成功后再启动；支持从已兼容的 1.x、alpha 和 beta 版本保留数据升级到 v2.0.0-beta.2.2。迁移失败或发现未知、损坏的数据会停止启动，不清空重建。旧版备份位于 `migration-backup-0.5.4/`。不要手工预写成功标记，或让新旧版本同时访问数据。
 
-群权限开关沿用已有存储语义：`group_admin_enabled=true` 为按名单校验，false 为全员 group.admin；用户命令中的 `on` 指开启全员模式。
+群权限开关 `group_ddl_everyone=true` 表示全员 group.ddl，false 或未配置时按名单校验。旧 `group_admin_enabled=false` 自动转换为全员 group.ddl，撤销全员模式产生的 group.admin 和 group.summary；保留直接授权。
 
 ## 日志与发送
 

@@ -16,7 +16,8 @@ from .deadlines.preferences import PreferenceStore
 from .deadlines.tasks import initialize_schema, validate_database
 from .json_store import atomic_json, read_json
 
-VERSION = "2.0.0-beta.2.2"
+VERSION = "2.0.0-beta.2.3"
+ROLE_UPGRADE = VERSION + ":roles-v4"
 
 
 @contextmanager
@@ -87,8 +88,8 @@ def _expected_access(old):
             "group.ddl": [],
             "group.summary": [],
         }
-    roles["group_admin_enabled"] = {
-        group: False for group in old["group_admin_disabled"]
+    roles["group_ddl_everyone"] = {
+        group: True for group in old["group_admin_disabled"]
     }
     return roles, {"groups": old["readonly_groups"]}
 
@@ -232,6 +233,7 @@ def migrate(directory: Path):
             "2.0.0-beta.2.0",
             "2.0.0.beta.2",
             "2.0.0-beta.2.1",
+            "2.0.0-beta.2.2",
             "1.0.0",
             "1.0.1",
             "1.0.2",
@@ -245,6 +247,16 @@ def migrate(directory: Path):
         }:
             if version != VERSION:
                 _backup_upgrade(directory, version)
+            # Queue before changing the role schema so interrupted startups retain
+            # the announcement, including upgrades within the current Dev release.
+            if version == VERSION and read_json(directory / "roles.json").get(
+                "version"
+            ) in (2, 3):
+                conversations = ConversationStore(directory / "conversations.sqlite3")
+                try:
+                    UpgradeStore(conversations).queue(ROLE_UPGRADE)
+                finally:
+                    conversations.close()
             _validate(directory)
             if (
                 version == VERSION

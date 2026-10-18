@@ -62,7 +62,7 @@
 - `--group 群号`：仅保留该群实际成员，并查询该群角色；与 ROLE 中的群号同时出现时须一致。 私聊不指定群时按角色或已知授权范围查询。
 - `--source direct`：匹配直接授权来源。
 - `--source inherited`：匹配通过上级身份组继承的权限。
-- `--source everyone`：匹配全员 group.admin 模式产生的权限。
+- `--source everyone`：匹配全员 group.ddl 模式产生的权限。
 - 不指定 source 时不按来源筛选；来源筛选用于筛选人员，展示仍包含其权限说明。
 - `--page`：正整数，默认1，每页20人。
 
@@ -86,7 +86,7 @@
 - `--group 群号`：仅保留该群实际成员，并查询该群角色；与 ROLE 中的群号同时出现时须一致。 群内只能指定本群，省略时默认本群。
 - `--source direct`：匹配直接授权来源。
 - `--source inherited`：匹配通过上级身份组继承的权限。
-- `--source everyone`：匹配全员 group.admin 模式产生的权限。
+- `--source everyone`：匹配全员 group.ddl 模式产生的权限。
 - 不指定 source 时不按来源筛选；来源筛选用于筛选人员，展示仍包含其权限说明。
 - `--page`：正整数，默认1，每页20人。
 
@@ -271,7 +271,7 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 
 `--roles` 省略时清空全部六种群直接授权（含 group.discuss.super/admin/user）；提供时只清空列出的角色，使用英文逗号分隔。roles 使用 `group.ddl` 这样的名称。
 
-不改变全局授权、不关闭全员 group.admin 模式，也不取消现有 DDL；其他继承或全员模式仍可能让用户保持有效权限。
+不改变全局授权、不关闭全员 group.ddl 模式，也不取消现有 DDL；其他继承或全员模式仍可能让用户保持有效权限。
 
 支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
 
@@ -291,7 +291,7 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 
 `--roles` 省略时清空全部六种群直接授权（含 group.discuss.super/admin/user）；提供时只清空列出的角色，使用英文逗号分隔。roles 使用 `group.ddl` 这样的名称。
 
-不改变全局授权、不关闭全员 group.admin 模式，也不取消现有 DDL；其他继承或全员模式仍可能让用户保持有效权限。
+不改变全局授权、不关闭全员 group.ddl 模式，也不取消现有 DDL；其他继承或全员模式仍可能让用户保持有效权限。
 
 支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
 
@@ -299,17 +299,17 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 /super role reset --roles group.ddl,group.summary --dry-run
 ```
 
-## `/super role group-admin` 命令
+## `/super role group-ddl` 命令
 
-### `/super role group-admin` - CHAT
+### `/super role group-ddl` - CHAT
 
-**完整格式**：`/super role group-admin on|off 群号[,群号] [--dry-run]`
+**完整格式**：`/super role group-ddl on|off 群号[,群号] [--dry-run]`
 
 **所需权限组**：`super`
 
-切换群的“全员 group.admin”模式，不改动已保存的直接授权名单。
+切换群的“全员 group.ddl”模式，不改动已保存的直接授权名单。旧全员 group.admin 模式在升级时自动转换，撤销其产生的 admin、summary 权限。
 
-- `on`：所有实际群成员获得 group.admin，并继承 group.ddl 与 group.summary。
+- `on`：所有实际群成员仅获得 group.ddl，不授予 group.admin 或 group.summary。
 - `off`：恢复按授权名单及继承关系判断；不会清空原直接授权。
 
 必须提供群号；多个群用英文逗号分隔，最多100群。
@@ -319,19 +319,19 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
 
 ```text
-/super role group-admin on 3333,4444 --dry-run
-/super role group-admin off 3333,4444
+/super role group-ddl on 3333,4444 --dry-run
+/super role group-ddl off 3333,4444
 ```
 
-### `/super role group-admin` - GROUP
+### `/super role group-ddl` - GROUP
 
-**完整格式**：`/super role group-admin on|off [本群群号] [--dry-run]`
+**完整格式**：`/super role group-ddl on|off [本群群号] [--dry-run]`
 
 **所需权限组**：`super`
 
-切换群的“全员 group.admin”模式，不改动已保存的直接授权名单。
+切换群的“全员 group.ddl”模式，不改动已保存的直接授权名单。旧全员 group.admin 模式在升级时自动转换，撤销其产生的 admin、summary 权限。
 
-- `on`：所有实际群成员获得 group.admin，并继承 group.ddl 与 group.summary。
+- `on`：所有实际群成员仅获得 group.ddl，不授予 group.admin 或 group.summary。
 - `off`：恢复按授权名单及继承关系判断；不会清空原直接授权。
 
 省略群号时作用于本群，不能指定其他群。
@@ -341,8 +341,8 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 支持 `--dry-run` 只预览，不保存、不通知。批量操作先完整校验，再一次性保存，并记录操作者、时间和前后权限。
 
 ```text
-/super role group-admin on --dry-run
-/super role group-admin off
+/super role group-ddl on --dry-run
+/super role group-ddl off
 ```
 
 ## discuss 统一身份管理
@@ -355,4 +355,4 @@ QQ 列表用英文逗号分隔，最多100人；配置的 super 不受影响。
 /super role list 123456.discuss.super
 ```
 
-上述管理命令须全局 super，普通用户通过 `/role` 查看自身。all/blacklist 模式影响有效 user，直接白名单授权与有效权限分别展示。黑名单不能撤销管理身份继承；全员 group.admin 不授予 discuss。clear/set/reset 同样覆盖目标范围的 discuss 直接授权，不清空 discuss 黑名单和准入模式。
+上述管理命令须全局 super，普通用户通过 `/role` 查看自身。all/blacklist 模式影响有效 user，直接白名单授权与有效权限分别展示。黑名单不能撤销管理身份继承；全员 group.ddl 不授予 discuss。clear/set/reset 同样覆盖目标范围的 discuss 直接授权，不清空 discuss 黑名单和准入模式。

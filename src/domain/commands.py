@@ -201,7 +201,7 @@ CATALOG = (
 )
 # Compatibility aliases are hidden from help for one transition version.
 LEGACY = {
-    ("/role", sub) for sub in ("list", "add", "remove", "clear", "reset", "group-admin")
+    ("/role", sub) for sub in ("list", "add", "remove", "clear", "reset", "group-ddl")
 }
 LEGACY |= {
     ("/cost", ""),
@@ -269,10 +269,10 @@ def management_specs():
             "清空群的全部或指定直接身份组名单",
         ),
         (
-            "role group-admin",
+            "role group-ddl",
             "super_roles",
-            "/super role group-admin on|off [群号[,群号]] [--dry-run]",
-            "开关全员 group.admin 模式，保留直接名单",
+            "/super role group-ddl on|off [群号[,群号]] [--dry-run]",
+            "开关全员 group.ddl 模式，保留直接名单",
         ),
         (
             "ddl list",

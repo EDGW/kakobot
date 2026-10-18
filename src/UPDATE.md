@@ -1,1 +1,1 @@
-KakoBot v2.0.0-beta.2.2：业务命令每轮条数可配置，默认 5，Super 豁免条数限制；执行后自动发送脱敏命令及结果记录。旧配置自动补齐，原权限和预算限制保留。
+KakoBot v2.0.0-beta.2.3：全员开关改为 /super role group-ddl on|off，旧全员 admin 自动转为仅 ddl，撤销全员 admin、summary，保留单独授权。业务命令提示词同步当前条数限制及 Super 豁免身份。

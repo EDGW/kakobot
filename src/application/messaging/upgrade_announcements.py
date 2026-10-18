@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from ...infrastructure.storage.broadcasts.updates import load_update
-from ...infrastructure.storage.migration import VERSION
+from ...infrastructure.storage.migration import ROLE_UPGRADE, VERSION
 from ...presentation.announcements import format_announcement
 
 logger = logging.getLogger("astrbot")
@@ -16,7 +16,9 @@ class UpgradeAnnouncements:
         self.store = store
         self.resolve_gateway = resolve_gateway
         self.task = None
-        self.store.prepare(VERSION, self.eligible)
+        self.versions = (VERSION, ROLE_UPGRADE)
+        for version in self.versions:
+            self.store.prepare(version, self.eligible)
 
     def eligible(self, user):
         return "autoanalysis" in self.announcements.roles.effective(user)
@@ -42,12 +44,16 @@ class UpgradeAnnouncements:
                 await self.tick()
             except Exception as exc:
                 logger.error("KakoBot 升级公告暂停发送（%s）", type(exc).__name__)
-            if not self.store.pending(VERSION):
+            if not any(self.store.pending(version) for version in self.versions):
                 return
             await asyncio.sleep(15)
 
     async def tick(self):
-        pending = self.store.pending(VERSION)
+        for version in self.versions:
+            await self._tick(version)
+
+    async def _tick(self, version):
+        pending = self.store.pending(version)
         if not pending:
             return
         text = format_announcement(load_update())
@@ -63,17 +69,17 @@ class UpgradeAnnouncements:
                 if not self.eligible(user) or not announcements.conversations.accepts(
                     platform, bot, user
                 ):
-                    self.store.finish(VERSION, recipient, "skipped")
+                    self.store.finish(version, recipient, "skipped")
                     continue
-                if not self.store.claim(VERSION, recipient):
+                if not self.store.claim(version, recipient):
                     continue
                 try:
                     await gateway.send(text=text, user=user)
                 except Exception as exc:
-                    self.store.finish(VERSION, recipient, "failed")
+                    self.store.finish(version, recipient, "failed")
                     await announcements.guard.report_error(
                         gateway.bot, bot, f"升级公告；接收人 {user}", exc
                     )
                 else:
-                    self.store.finish(VERSION, recipient, "sent")
+                    self.store.finish(version, recipient, "sent")
                 await asyncio.sleep(0.5)

@@ -28,7 +28,7 @@
 
 ## 兼容入口
 
-旧 Super 专用 `/role list/add/remove/clear/reset/group-admin`、`/cost`、`/announce`、`/readonly add/remove` 在过渡版本中转发至对应 Super 命令，帮助只展示新入口。不存在独立 `/request` 命令。
+旧 Super 专用 `/role list/add/remove/clear/reset/group-ddl`、`/cost`、`/announce`、`/readonly add/remove` 在过渡版本中转发至对应 Super 命令，帮助只展示新入口。不存在独立 `/request` 命令。
 
 `/send` 和 `/readonly list` 继续向全局 admin 开放；详见普通命令目录。
 

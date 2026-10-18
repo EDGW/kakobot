@@ -755,6 +755,18 @@ async def test_unified_role_commands_and_scope(service):
             Names(),
         )
 
+    preview = await edit("group-ddl", "on 10 --dry-run")
+    assert "全员 group.ddl" in preview
+    assert "group.ddl" not in service.roles.effective("4", "10", True)
+    await edit("group-ddl", "on 10")
+    assert service.roles.effective("4", "10", True) == {"group.ddl"}
+    assert service.roles.effective("4", "10", False) == set()
+    assert "4" in await edit("list", "10.ddl --source everyone")
+    assert "（空）" in await edit("list", "10.admin --source everyone")
+    assert "全员 group.ddl 模式仍为 on" in await edit("reset", "10 --roles group.ddl")
+    await edit("group-ddl", "off 10")
+    assert service.roles.effective("4", "10", True) == set()
+
     await edit("add", "3 10.discuss.admin")
     assert service.role(scope, "admin", "3")
     effective = service.roles.effective("3", "10", True, platform="qq", bot="9")
@@ -785,12 +797,13 @@ async def test_roles_migration_is_idempotent(service, tmp_path):
     legacy = empty_roles()
     legacy.pop("discuss_roles")
     legacy["version"] = 2
+    legacy["group_admin_enabled"] = {g: not v for g, v in legacy.pop("group_ddl_everyone").items()}
     legacy["global_roles"]["admin"] = ["3"]
     path = tmp_path / "old-roles.json"
     atomic_json(path, legacy)
     upgraded = RoleStore(path, "1")
-    assert upgraded.data["version"] == 3
-    assert read_json(path.with_name("roles-before-discuss-unification.json")) == legacy
+    assert upgraded.data["version"] == 4
+    assert read_json(path.with_name("roles-before-everyone-ddl.json")) == legacy
     scope = scope_key(ctx(group="10"))
     service.store.change_role(scope, "1", "admin", "3", True)
     service.store.change_role(scope, "1", "blacklist", "4", True)
@@ -844,6 +857,7 @@ async def test_help_cards_and_aliases(service, tmp_path):
         "2.0.0-beta.2.0",
         "2.0.0.beta.2",
         "2.0.0-beta.2.1",
+        "2.0.0-beta.2.2",
     ],
 )
 def test_prerelease_upgrade_preserves_state_and_queues_announcement(
@@ -863,6 +877,7 @@ def test_prerelease_upgrade_preserves_state_and_queues_announcement(
     roles = read_json(tmp_path / "roles.json")
     roles.pop("discuss_roles")
     roles["version"] = 2
+    roles["group_admin_enabled"] = {g: not v for g, v in roles.pop("group_ddl_everyone").items()}
     atomic_json(tmp_path / "roles.json", roles)
     store = DiscussStore(tmp_path)
     scope = scope_key(ctx(group="10"))
@@ -873,7 +888,7 @@ def test_prerelease_upgrade_preserves_state_and_queues_announcement(
     migrate(tmp_path)
     migrate(tmp_path)
     assert (tmp_path / f"migration-backup-{previous_version}/roles.json").is_file()
-    assert read_json(tmp_path / "roles.json")["version"] == 3
+    assert read_json(tmp_path / "roles.json")["version"] == 4
     store = DiscussStore(tmp_path)
     assert store.secret(scope) == "sk-upgrade-key"
     assert store.role_list(scope, "super") == ["2"]
@@ -934,12 +949,14 @@ async def test_role_effective_modes_match_discuss(service):
             assert ("group.discuss.user" in effective) is (
                 member and (mode == "all" or (mode == "blacklist" and user != "4"))
             )
-    # Legacy all-member admin doesn't grant AI management.
+    # All-member DDL doesn't grant group or AI management.
     data = json.loads(json.dumps(service.roles.data))
-    data["group_admin_enabled"]["10"] = False
+    data["group_ddl_everyone"]["10"] = True
     service.roles.replace(data)
     roles = service.roles.effective("4", "10", True, platform="qq", bot="9")
-    assert "group.admin" in roles
+    assert "group.ddl" in roles
+    assert "group.admin" not in roles
+    assert "group.summary" not in roles
     assert "group.discuss.admin" not in roles
     # Global super remains above group blacklist and revoked direct grants.
     await command(service, g, "/group-discuss admin blacklist add 1 10", "2")
@@ -1569,7 +1586,7 @@ async def test_rule_warning_then_blacklist_same_user_across_sessions(service):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "exemption",
-    ["group.admin", "all-group-admin", "discuss-admin", "discuss-super", "super"],
+    ["group.admin", "all-group-ddl", "discuss-admin", "discuss-super", "super"],
 )
 async def test_auto_blacklist_exempts_effective_admins(service, exemption):
     g = Gateway()
@@ -1584,8 +1601,8 @@ async def test_auto_blacklist_exempts_effective_admins(service, exemption):
             "group.ddl": [],
             "group.summary": [],
         }
-    elif exemption == "all-group-admin":
-        service.roles.data["group_admin_enabled"]["10"] = False
+    elif exemption == "all-group-ddl":
+        service.roles.data["group_ddl_everyone"]["10"] = True
     elif exemption in {"discuss-admin", "discuss-super"}:
         service.roles.change_discuss(
             scope, "admin" if exemption == "discuss-admin" else "super", "3", True
@@ -1602,7 +1619,7 @@ async def test_auto_blacklist_exempts_effective_admins(service, exemption):
     service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     for i in range(2):
         await service.handle(ctx(actor, "10", "请求", f"exempt-{i}", True), g)
-    if exemption in {"group.admin", "all-group-admin"}:
+    if exemption in {"group.admin", "all-group-ddl"}:
         assert "明确警告" in g.sent[0]["text"]
         assert service.store.role(scope, "blacklist", actor)
         assert "已加入本群 discuss 黑名单" in g.sent[-1]["text"]
@@ -2768,3 +2785,33 @@ def test_command_count_policy_upgrade_and_bounds():
     for value in [0, -1, 101, True]:
         with pytest.raises(BusinessError):
             validate_group(key, value, policy)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actor", ["1", "2"])
+async def test_command_prompt_uses_live_config_and_verified_super(service, actor):
+    from src.application.group_discuss.harness import Turn, command_model_request
+
+    g = Gateway()
+    scope = await enable(service, g)
+    service.policy["defaults"]["tools.execute_commands.enabled"] = True
+    session = service.store.create_session(scope, actor, 5)
+    turn = Turn(service, ctx(actor, "10"), g, scope, session, service.store.new_turn(session, actor))
+    payloads = []
+
+    async def handler(request):
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, json=response(answer("OK")))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    for limit in [12, 8]:
+        service.policy["defaults"]["tools.execute_commands.max_commands_per_request"] = limit
+        await command_model_request(turn, "回答用户", "hello")
+        prompt = payloads[-1]["instructions"]
+        assert f"默认 {limit} 条（当前生效配置）" in prompt
+        if actor == "1":
+            assert "当前发起人是全局 Super，不受此条数限制" in prompt
+        else:
+            assert f"当前发起人不是全局 Super，本轮条数上限为 {limit} 条" in prompt
+        assert "默认5条" not in prompt

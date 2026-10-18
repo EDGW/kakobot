@@ -17,11 +17,11 @@ from ..json_store import atomic_json, read_json
 
 def empty_roles() -> dict:
     return {
-        "version": 3,
+        "version": 4,
         "discuss_roles": {},
         "global_roles": {role: [] for role in sorted(GLOBAL_ROLES - {"super"})},
         "group_roles": {},
-        "group_admin_enabled": {},
+        "group_ddl_everyone": {},
     }
 
 
@@ -30,11 +30,11 @@ def validate_roles(data: dict) -> None:
         not isinstance(data, dict)
         or set(data) != set(empty_roles())
         or type(data["version"]) is not int
-        or data["version"] != 3
+        or data["version"] != 4
     ):
         raise ValueError("roles.json 格式或结构版本错误。")
     globals_ = data["global_roles"]
-    groups, switches = data["group_roles"], data["group_admin_enabled"]
+    groups, switches = data["group_roles"], data["group_ddl_everyone"]
     if (
         not isinstance(globals_, dict)
         or set(globals_) != GLOBAL_ROLES - {"super"}
@@ -89,12 +89,21 @@ class RoleStore:
         if self.super_user != "000000000":
             self.super_user = qq_id(self.super_user)
         self.data = read_json(path)
-        if self.data.get("version") == 2:
+        if self.data.get("version") in (2, 3):
             previous = copy.deepcopy(self.data)
-            self.data["version"] = 3
-            self.data["discuss_roles"] = {}
+            if self.data["version"] == 2:
+                self.data["discuss_roles"] = {}
+            switches = self.data.pop("group_admin_enabled")
+            if not isinstance(switches, dict) or any(
+                type(enabled) is not bool for enabled in switches.values()
+            ):
+                raise ValueError("旧群权限开关结构无效。")
+            self.data["group_ddl_everyone"] = {
+                group: not enabled for group, enabled in switches.items()
+            }
+            self.data["version"] = 4
             validate_roles(self.data)
-            backup = path.with_name("roles-before-discuss-unification.json")
+            backup = path.with_name("roles-before-everyone-ddl.json")
             if not backup.exists():
                 atomic_json(backup, previous)
             atomic_json(path, self.data)
@@ -171,9 +180,9 @@ class RoleStore:
                 sources.setdefault(role, []).append(
                     "直接授权" if role == direct else f"继承自 {direct}"
                 )
-        if group and member and not self.data["group_admin_enabled"].get(group, True):
-            for role in expand_group({"group.admin"}):
-                sources.setdefault(role, []).append("全员 group.admin 模式")
+        if group and member and self.data["group_ddl_everyone"].get(group, False):
+            for role in expand_group({"group.ddl"}):
+                sources.setdefault(role, []).append("全员 group.ddl 模式")
         if group and platform and bot:
             if "super" in self.effective(user):
                 for role in DISCUSS_ROLES:
@@ -221,7 +230,7 @@ class RoleStore:
         return users
 
     def groups(self, *, platform="", bot="") -> set[str]:
-        result = set(self.data["group_roles"]) | set(self.data["group_admin_enabled"])
+        result = set(self.data["group_roles"]) | set(self.data["group_ddl_everyone"])
         for scope in self.data["discuss_roles"]:
             p, b, g = json.loads(scope)
             if (p, b) == (platform, bot):

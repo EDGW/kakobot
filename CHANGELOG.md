@@ -1,5 +1,11 @@
 # 更新日志
 
+# v2.0.0-beta.2.3
+
+- 全员权限开关改为 `/super role group-ddl on|off`，仅授予 group.ddl；旧全员 admin 模式自动迁移并撤销其 admin、summary 权限，保留直接授权，升级后发送更新公告。
+
+- 业务命令提示词动态使用当前生效的命令条数配置，并由程序明确当前发起人是否享有全局 Super 条数豁免；每次模型请求刷新。
+
 # v2.0.0-beta.2.2
 
 - 业务命令条数改为 tools.execute_commands.max_commands_per_request，默认 5、初始系统上限 100；全局 Super 豁免条数限制，保留权限、工具与预算检查。每批向用户发送脱敏命令执行记录，标明成功、拒绝、未执行、未确认或复用。
