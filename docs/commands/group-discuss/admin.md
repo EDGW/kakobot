@@ -70,7 +70,7 @@ admin 与群 super 共用本页，命令权限分别标注。`/group-discuss adm
 
 **所需权限组**：`group.discuss.admin`（含群 super 继承）或全局 `super`
 
-查看生效值、存储值和系统约束，Key 仅展示脱敏值。
+发送配置卡片图片，按用途展示生效值、来源和系统约束；存储值受限时同时列出。指定 KEY 只展示该项，Key 仅展示脱敏值。
 
 ```text
 /group-discuss admin config show GROUP [KEY]

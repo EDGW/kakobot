@@ -21,6 +21,7 @@ from ...infrastructure.group_discuss.store import DiscussStore, scope_key
 from ...infrastructure.messaging.help_images import HelpImageStore
 from ...infrastructure.messaging.onebot import ReadonlyViolation
 from ...infrastructure.storage.json_store import atomic_json, read_json
+from ...presentation.group_discuss.configuration import render_configuration
 from ...presentation.group_discuss.output import usage_footer
 from .harness import Turn, run_turn
 
@@ -536,19 +537,25 @@ class DiscussService:
                     if parts[3] not in shown:
                         raise BusinessError("未知配置项。")
                     shown = {parts[3]: shown[parts[3]]}
-                return json.dumps(
-                    {
-                        "effective": shown,
-                        "stored": stored,
-                        "system_maxima": self.policy["maxima"],
-                        "allowed_models": self.policy["allowed_models"],
-                        "allowed_efforts": self.policy["allowed_efforts"],
-                        "allowed_user_modes": self.policy["allowed_user_modes"],
-                        "tool_enabled": self.policy["tool_enabled"],
-                    },
-                    ensure_ascii=False,
-                    indent=2,
+                # Validate text before rasterizing: image pixels bypass text filters.
+                safe_stored = {
+                    key: value
+                    for key, value in stored.items()
+                    if key in shown and key != "api_key"
+                }
+                self.guard.secrets.check(
+                    json.dumps([shown, safe_stored, self.policy], ensure_ascii=False)
                 )
+                image = await asyncio.to_thread(
+                    render_configuration,
+                    json.loads(scope)[2],
+                    shown,
+                    safe_stored,
+                    copy.deepcopy(self.policy),
+                )
+                self.authorize(scope, ctx.actor, 1)
+                await gateway.send_image(image, group="", user=ctx.actor)
+                return None
             if parts[1] not in ("set", "reset") or len(parts) < (
                 5 if parts[1] == "set" else 4
             ):

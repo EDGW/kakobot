@@ -1,6 +1,6 @@
 # 群内 AI 讨论功能设计
 
-状态：v2.0.0-alpha.2 设计与实现约定。本文记录已确认需求，并为未明确的行为给出可实施的默认方案。
+状态：v2.0.0-alpha.3 设计与实现约定。本文记录已确认需求，并为未明确的行为给出可实施的默认方案。
 
 ## 1. 目标与边界
 
@@ -148,7 +148,7 @@ DeepSeek Responses 地址由系统配置确定，只允许全局 super 管理，
 
 增加全机器人每日 token 总预算，初始 5000000；与各群每日预算同时预留和扣减，由全局 super 调整，不能通过增加群数绕过。按平台和机器人账号分别统计总预算。
 
-工具系统总开关初始全部开启，各群工具开关初始全部关闭。DeepSeek Responses 默认地址 https://api.deepseek.com；模型白名单初始留空，由全局 super 配置后才可调用，思考强度默认 low，以目标模型实际支持为前提。
+工具系统总开关初始全部开启，各群工具开关初始全部关闭。DeepSeek Responses 默认地址 https://api.deepseek.com；模型白名单默认包含 deepseek-v4-flash、deepseek-flash、deepseek-v4-pro、deepseek-pro，无需手动添加，群仍需配置自己的 Key 和模型，思考强度默认 low，以目标模型实际支持为前提。
 
 ### 5.4 查看与凭据保护
 
@@ -257,7 +257,7 @@ Harness 使用 Pydantic AI 的 Responses 模型和工具循环，不自行实现
 | `/super group-discuss super add\|remove USER [GROUP]` | 私聊/群聊 | 任免群 discuss super |
 | `/super group-discuss super list [GROUP]` | 私聊/群聊 | 查看本群 discuss super |
 | `/super group-discuss admin add\|remove USER [GROUP]` | 私聊/群聊 | 直接任免群 discuss admin |
-| `/super group-discuss config show GROUP` | 私聊 | 查看群全部设置及约束，Key 脱敏 |
+| `/super group-discuss config show GROUP` | 私聊 | 图片卡片展示群设置、来源和约束，Key 脱敏 |
 | `/super group-discuss config set GROUP KEY VALUE` | 私聊 | 管理任意群配置，受系统上限约束 |
 | `/super group-discuss limits show` | 私聊 | 查看全局默认、上限和允许集合 |
 | `/super group-discuss limits set KEY VALUE` | 私聊 | 修改系统 discuss 配置并持久化 |
@@ -283,7 +283,7 @@ Harness 使用 Pydantic AI 的 Responses 模型和工具循环，不自行实现
 | 命令 | 位置 | 说明 |
 | --- | --- | --- |
 | `/group-discuss admin help` | 私聊/群聊 | 管理帮助 |
-| `/group-discuss admin config show GROUP [KEY]` | 仅私聊 | 查看设置及系统约束 |
+| `/group-discuss admin config show GROUP [KEY]` | 仅私聊 | 图片卡片展示生效值、来源和系统约束；KEY 可选 |
 | `/group-discuss admin config set GROUP KEY VALUE` | 仅私聊 | 设置配置，包括 user_mode、Key、模型、思考强度及各工具参数 |
 | `/group-discuss admin config reset GROUP KEY` | 仅私聊 | 重置为系统默认；Key 重置为未设置；不重置用量 |
 | `/group-discuss admin stats GROUP [today\|YYYY-MM-DD\|all]` | 仅私聊 | 群统计 |
@@ -405,3 +405,11 @@ local/discuss-design.md               # 本设计稿
 - 内置搜索包含网页访问，只有 search_web/fetch_webpage 两者都启用且有剩余额度时注册。官方忽略 max_tool_calls，响应内可能越过次数上限，只能记录返回动作并阻止后续调用；独立接口逐次执行前硬限次。
 - 每轮 summary 输出实际搜索/网页来源：内置、外置（DeepSeek 独立接口）、两者或未使用，不将工具计费伪装成模型 token。
 - 本次使用 make publish 打包 v2.0.0-alpha.2，commit 和 push，不创建 GitHub Release/pre-release；旧版 changelog 不变。
+
+
+## alpha.3 补充：配置卡片与文档渲染
+
+- config show 在私聊返回图片卡片，支持全量或单项设置，显示生效值、配置来源、受限存储值和相关系统约束，密钥只传递脱敏值给渲染器。
+- 默认模型白名单包含 deepseek-v4-flash、deepseek-flash、deepseek-v4-pro、deepseek-pro；不覆盖已有显式白名单。
+- 配置指南以新手常用设置开头，完整列出群与全局设置；四至六级标题保留在父卡片内，表格保留命令高亮与转义竖线。
+- 本次使用 make publish 打包 v2.0.0-alpha.3，支持从 alpha.1/alpha.2 升级并沿用自动更新公告。

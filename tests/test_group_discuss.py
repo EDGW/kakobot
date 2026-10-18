@@ -149,9 +149,9 @@ async def test_privileges_modes_and_private_config(service):
     await command(service, g, "/super group-discuss admin remove 3 10")
     with pytest.raises(BusinessError):
         await service.require_user(ctx("3", "10"), g, scope)
-    assert "sk-ex*****89" in await command(
-        service, g, "/group-discuss admin config show 10", "2"
-    )
+    await command(service, g, "/group-discuss admin config show 10", "2")
+    assert g.sent[-1]["data"].startswith(b"\x89PNG")
+    assert g.sent[-1]["user"] == "2"
     assert (
         "sk-example-123456789" not in service.policy_path.read_text()
         if service.policy_path.exists()
@@ -520,7 +520,7 @@ def test_upgrade_backup_and_prerelease_version(tmp_path):
     assert (tmp_path / "migration-backup-1.3.2" / "roles.json").is_file()
     assert (tmp_path / "migration-backup-1.3.2" / "deadlines.sqlite3").is_file()
     migrate(tmp_path)  # repeat is safe
-    assert ReleaseInfoStore().version() == "v2.0.0-alpha.2"
+    assert ReleaseInfoStore().version() == "v2.0.0-alpha.3"
 
 
 @pytest.mark.asyncio
@@ -811,7 +811,10 @@ async def test_help_cards_and_aliases(service, tmp_path):
         await command(service, g, "/super group-discuss help", "4")
 
 
-def test_alpha1_upgrade_preserves_state_and_queues_announcement(tmp_path):
+@pytest.mark.parametrize("previous_version", ["2.0.0-alpha.1", "2.0.0-alpha.2"])
+def test_alpha_upgrade_preserves_state_and_queues_announcement(
+    tmp_path, previous_version
+):
     from src.infrastructure.storage.broadcasts.conversations import ConversationStore
     from src.infrastructure.storage.broadcasts.upgrades import UpgradeStore
     from src.infrastructure.storage.json_store import read_json
@@ -832,10 +835,10 @@ def test_alpha1_upgrade_preserves_state_and_queues_announcement(tmp_path):
     store.change_role(scope, "1", "super", "2", True)
     store.set_secret(scope, "1", "sk-upgrade-key")
     store.close()
-    atomic_json(tmp_path / "version.json", {"version": "2.0.0-alpha.1"})
+    atomic_json(tmp_path / "version.json", {"version": previous_version})
     migrate(tmp_path)
     migrate(tmp_path)
-    assert (tmp_path / "migration-backup-2.0.0-alpha.1/roles.json").is_file()
+    assert (tmp_path / f"migration-backup-{previous_version}/roles.json").is_file()
     assert read_json(tmp_path / "roles.json")["version"] == 3
     store = DiscussStore(tmp_path)
     assert store.secret(scope) == "sk-upgrade-key"
@@ -911,3 +914,149 @@ async def test_role_effective_modes_match_discuss(service):
         "group.discuss.admin",
         "group.discuss.user",
     } <= service.roles.effective("1", "10", True, platform="qq", bot="9")
+
+
+@pytest.mark.asyncio
+async def test_config_show_cards_redaction_filtering_and_permissions(
+    service, monkeypatch
+):
+    from io import BytesIO
+
+    from PIL import Image
+
+    from src.presentation.group_discuss.configuration import (
+        configuration_sections,
+        render_configuration,
+    )
+
+    g = Gateway()
+    await enable(service, g)
+    rendered = []
+
+    def capture(group, shown, stored, policy):
+        rendered.append((group, shown, stored, policy))
+        return render_configuration(group, shown, stored, policy)
+
+    monkeypatch.setattr(
+        "src.application.group_discuss.service.render_configuration", capture
+    )
+    await command(service, g, "/group-discuss admin config set 10 max_sessions 15", "2")
+    service.policy["maxima"]["max_sessions"] = 10
+    assert await command(service, g, "/group-discuss admin config show 10", "2") is None
+    group, shown, stored, policy = rendered[-1]
+    assert group == "10"
+    assert shown["api_key"] == "sk-ex*****89"
+    assert "sk-example-123456789" not in str(rendered)
+    assert shown["max_sessions"] == 10
+    rows = [
+        row for _, rows in configuration_sections(shown, stored, policy) for row in rows
+    ]
+    limited = next(row for row in rows if row[0] == "活跃会话数")
+    assert "存储值 15" in limited[2]
+    assert "全局上限 10" in limited[2]
+    assert g.sent[-1]["user"] == "2"
+    assert g.sent[-1]["group"] == ""
+    with Image.open(BytesIO(g.sent[-1]["data"])) as picture:
+        assert picture.format == "PNG"
+        assert picture.width == 1120
+    await command(service, g, "/group-discuss admin config show 10 api_key", "2")
+    assert set(rendered[-1][1]) == {"api_key"}
+    assert rendered[-1][2] == {}
+    await command(service, g, "/super group-discuss config show 10 max_sessions")
+    assert set(rendered[-1][1]) == {"max_sessions"}
+    assert g.sent[-1]["user"] == "1"
+    before = len(g.sent)
+    for actor, group in [("4", ""), ("2", "10")]:
+        with pytest.raises(BusinessError):
+            await command(
+                service, g, "/group-discuss admin config show 10", actor, group
+            )
+    with pytest.raises(BusinessError, match="未知"):
+        await command(service, g, "/group-discuss admin config show 10 missing", "2")
+    assert len(g.sent) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", ["", "10"])
+async def test_role_cards_scope_and_sources(service, monkeypatch, group):
+    from src.application.roles.service import RoleService
+    from src.presentation.roles import render_role_cards
+
+    g = Gateway()
+    await enable(service, g)
+    await command(service, g, "/group-discuss super admin add 3 10", "2")
+    other = scope_key(ctx(group="11"))
+    service.roles.change_discuss(other, "user", "3", True)
+    service.roles.change_discuss('["qq","8","12"]', "admin", "3", True)
+    captured = []
+
+    def capture(title, global_sources, groups, *, private):
+        captured.append((title, global_sources, groups, private))
+        return render_role_cards(title, global_sources, groups, private=private)
+
+    monkeypatch.setattr("src.application.roles.service.render_role_cards", capture)
+
+    class Names:
+        gateway = g
+        guard = service.guard
+
+        def __init__(self):
+            self.members = {}
+
+        def seed_members(self, group, members):
+            self.members[group] = {str(m["user_id"]): m for m in members}
+
+        async def user(self, user, group=""):
+            return f"测试用户（{user}）"
+
+        async def group(self, group):
+            return f"测试群（{group}）"
+
+    names = Names()
+    action = SimpleNamespace(context=ctx("3", group))
+    assert await RoleService(service.roles).handle(action, names) is None
+    _, _, visible, private = captured[-1]
+    assert private is (not bool(group))
+    assert [item[0] for item in visible] == (["10"] if group else ["10", "11"])
+    sources = visible[0][2]
+    assert sources["group.discuss.admin"] == ["直接授权"]
+    assert sources["group.discuss.user"] == ["继承自 group.discuss.admin"]
+    assert g.sent[-1]["data"].startswith(b"\x89PNG")
+    assert g.sent[-1]["group"] == group
+    assert g.sent[-1]["user"] == ("" if group else "3")
+    # Text descriptions used by Super batch management continue to work.
+    description = await RoleService(service.roles)._description(
+        "3", action.context, names, ["10", "11"]
+    )
+    assert "继承自 group.discuss.admin" in description
+
+    from src.domain.security import SecretViolation
+
+    service.guard.secrets.register("sk-secret-nickname")
+
+    async def secret_name(*args):
+        return "sk-secret-nickname"
+
+    names.user = secret_name
+    before = len(g.sent)
+    with pytest.raises(SecretViolation):
+        await RoleService(service.roles).handle(action, names)
+    assert len(g.sent) == before
+
+
+def test_role_cards_pagination_and_no_roles():
+    from io import BytesIO
+
+    from PIL import Image
+
+    from src.presentation.roles import render_role_cards
+
+    sources = {"group.discuss.user": ["全员 discuss 模式"]}
+    groups = [(str(i), f"群{i}", sources) for i in range(10, 19)]
+    images = render_role_cards("用户（3）", {}, groups, private=True)
+    assert len(images) == 3
+    for image in images:
+        with Image.open(BytesIO(image)) as picture:
+            assert picture.width == 1120
+            assert picture.height < 10000
+    assert len(render_role_cards("用户（3）", {}, [], private=True)) == 1

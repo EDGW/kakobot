@@ -259,7 +259,12 @@
       "allowed_models": {
         "description": "allowed_models",
         "type": "list",
-        "default": []
+        "default": [
+          "deepseek-v4-flash",
+          "deepseek-flash",
+          "deepseek-v4-pro",
+          "deepseek-pro"
+        ]
       },
       "allowed_efforts": {
         "description": "allowed_efforts",

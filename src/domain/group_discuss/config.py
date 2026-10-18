@@ -43,7 +43,12 @@ def system_defaults():
         "defaults": copy.deepcopy(DEFAULTS),
         "maxima": copy.deepcopy(MAXIMA),
         "tool_enabled": dict.fromkeys(TOOLS, True),
-        "allowed_models": [],
+        "allowed_models": [
+            "deepseek-v4-flash",
+            "deepseek-flash",
+            "deepseek-v4-pro",
+            "deepseek-pro",
+        ],
         "allowed_efforts": ["low", "medium", "high"],
         "allowed_user_modes": ["whitelist", "all", "blacklist"],
         "api_address": "https://api.deepseek.com",

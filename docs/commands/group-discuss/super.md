@@ -130,7 +130,7 @@
 
 **所需权限组**：全局 `super`
 
-查看任意群配置。
+以图片卡片查看任意群配置，展示当前生效值、来源和相关系统约束；指定 KEY 只显示该项，Key 始终脱敏。
 
 ```text
 /super group-discuss config show GROUP [KEY]
