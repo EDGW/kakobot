@@ -1,3 +1,1 @@
-KakoBot 已更新。
-
-私聊和群聊 DDL 提醒均使用卡片。帮助已改为图片：/help ddl 查看用法；/version 查看版本，/changelog 查看完整更新日志。
+KakoBot 已更新至 v1.3.2。私聊 DDL 提醒现已使用图片卡片；升级后会自动发送更新公告，拒收设置仍然有效。/changelog 查看完整更新日志。
