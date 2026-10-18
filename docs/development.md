@@ -38,3 +38,25 @@ python -m src.tooling.package
 构建输出为 `dist/astrbot_plugin_kakobot-v版本.zip`，包含插件代码、README、docs 和中文字体，不包含 examples、工具脚本、运行数据库、密钥或本地设计草稿。GitHub 标签发布工作流沿用现有配置。
 
 命令文档中，一个 Markdown 文件对应一组功能，在每个命令下分别说明 CHAT、GROUP 的完整格式、所需权限组和行为。参数含义、默认值、作用范围、执行结果及示例直接写在对应命令下，不另设“使用规则与示例”汇总节。普通命令放在 `docs/commands/`，Super 命令放在 `docs/commands/super/`；各目录的 README 维护功能索引。
+
+## 生成文档卡片图片
+
+安装项目依赖后，在仓库根目录运行：
+
+```sh
+python -m src.tooling.docs_images
+```
+
+脚本递归读取 `docs/` 下的 Markdown，每个文件生成 CHAT 和 GROUP 两张 JPEG。输出到 `docs/pics/` 并保留源目录结构，例如 `docs/commands/ddl.md` 对应 `docs/pics/commands/ddl-chat.jpeg` 和 `docs/pics/commands/ddl-group.jpeg`；`docs/configuration.md` 对应 `docs/pics/configuration-chat.jpeg` 和 `docs/pics/configuration-group.jpeg`。
+
+标题以 `- CHAT` 或 `- GROUP` 结尾的段落只出现在对应会话图片中，整段内容及下级段落一同筛选。公共说明保留在两张图中；某个会话没有命令入口时显示不可用提示。没有会话标记的通用文档生成两份相同正文，页头分别标注会话类型。
+
+排版使用随项目提供的中文字体：命令独立成卡片，行内命令高亮，代码块使用深色底，表格转为逐行信息卡。长命令和中文正文按实际文字宽度换行，图片高度随内容增长，不截断正文。超过 JPEG 高度上限时会报错，可减小字号或拆分源文档。
+
+可以自定义输入、输出、宽度和正文字号：
+
+```sh
+python -m src.tooling.docs_images --docs docs --output docs/pics --width 1200 --font-size 25
+```
+
+默认宽度1200像素、正文字号25像素。源目录中位于输出目录内的 Markdown 会跳过；重复运行覆盖同名图片，不清理其他文件。`docs/pics/` 为本地生成物，Git 和插件安装包均不包含这些图片；脚本只需 Pillow，不调用模型或网络。
