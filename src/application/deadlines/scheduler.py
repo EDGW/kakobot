@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 
-from ...domain.deadlines import local_time
 from ...domain.security import SecretViolation
 from ...infrastructure.messaging.onebot import ReadonlyViolation
 from ...presentation.deadlines.details import participant_labels
@@ -98,33 +97,26 @@ class DeadlineScheduler:
                         continue
                     if not group and users != [task["conversation"]]:
                         raise RuntimeError("个人任务通知对象与所有者不一致，拒绝发送。")
+                    labels = [task["title"]]
                     if group:
                         task["participant_label"] = await participant_labels(
                             task, names, group
                         )
-                        labels = [task["title"], task["participant_label"]]
-                        service.guard.secrets.check(labels)
-                        # The scheduler serializes its own render without taking
-                        # the view semaphore while holding the cancellation lock.
-                        png = await asyncio.to_thread(
-                            render_reminder, task, time.time()
-                        )
-                        if self.expired(node, task):
-                            data.finish(node, "skipped")
-                            continue
-                        service.guard.secrets.check(labels)
+                        labels.append(task["participant_label"])
+                    service.guard.secrets.check(labels)
+                    # Serialize reminder renders without taking the view semaphore
+                    # while holding the cancellation lock.
+                    png = await asyncio.to_thread(
+                        render_reminder, task, time.time(), group=bool(group)
+                    )
+                    if self.expired(node, task):
+                        data.finish(node, "skipped")
+                        continue
+                    service.guard.secrets.check(labels)
+                    if group:
                         await gateway.remind_card(group, users, png)
                     else:
-                        conversation = "私聊 " + await names.user(task["conversation"])
-                        creator = await names.user(task["creator"])
-                        labels = await names.user_list(users)
-                        if self.expired(node, task):
-                            data.finish(node, "skipped")
-                            continue
-                        minutes = max(0, int((task["deadline"] - time.time()) // 60))
-                        text = f"[KakoBot] DDL 提醒 #{task['id']}\n{task['title']}\n会话：{conversation}\n设置者：{creator}\n通知对象：{labels}\n截止：{local_time(task['deadline'])}（北京时间）\n剩余：{minutes} 分钟"
-                        service.guard.secrets.check(text)
-                        await gateway.send(user=task["conversation"], text=text)
+                        await gateway.send_image(png, user=task["conversation"])
                     data.finish(node, "sent")
                 except ReadonlyViolation:
                     data.finish(node, "skipped")

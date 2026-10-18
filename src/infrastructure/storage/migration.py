@@ -9,6 +9,8 @@ from pathlib import Path
 from ...domain.context import qq_id
 from .access.readonly import ReadonlyPolicy
 from .access.roles import RoleStore, empty_roles, validate_roles
+from .broadcasts.conversations import ConversationStore
+from .broadcasts.upgrades import UpgradeStore
 from .deadlines.preferences import PreferenceStore
 from .deadlines.tasks import initialize_schema, validate_database
 from .json_store import atomic_json, read_json
@@ -161,7 +163,13 @@ def _validate(directory):
         db.close()
 
 
-def _mark_version(marker):
+def _mark_version(marker, *, upgraded=False):
+    if upgraded:
+        conversations = ConversationStore(marker.parent / "conversations.sqlite3")
+        try:
+            UpgradeStore(conversations).queue(VERSION)
+        finally:
+            conversations.close()
     atomic_json(marker, {"version": VERSION})
     if read_json(marker) != {"version": VERSION}:
         raise ValueError("迁移版本标记回读失败。")
@@ -197,10 +205,20 @@ def migrate(directory: Path):
             _validate(directory)
             if version != VERSION:
                 # Compatible patches keep the existing schema and all data.
-                _mark_version(marker)
+                _mark_version(marker, upgraded=True)
             return
         if version != "0.5.4":
             raise ValueError(f"不支持从 {version} 迁移至 {VERSION}，禁止降级或覆盖。")
+        existing = marker.exists() or any(
+            (directory / name).exists()
+            for name in (
+                "access.json",
+                "roles.json",
+                "deadlines.sqlite3",
+                "ddl_preferences.json",
+                "conversations.sqlite3",
+            )
+        )
         old = _old_access(directory / "access.json")
         backup = directory / "migration-backup-0.5.4"
         backup.mkdir(exist_ok=True)
@@ -227,4 +245,4 @@ def migrate(directory: Path):
         _save_or_verify(directory / "readonly.json", readonly)
         _database(database)
         _validate(directory)
-        _mark_version(marker)
+        _mark_version(marker, upgraded=existing)

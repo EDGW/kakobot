@@ -271,6 +271,7 @@ class AstrBotAdapter:
                         platform.get_client(), "", "启动账号路由查询", exc
                     )
         self.runtime.scheduler.start()
+        self.runtime.upgrade_announcements.start()
 
     async def platforms_loaded(self):
         await self._load_routes()

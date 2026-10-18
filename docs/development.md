@@ -15,7 +15,7 @@
 | `infrastructure/storage/` | JSON/SQLite 基础存储、审计、申请、用量和启动迁移 |
 | `infrastructure/storage/deadlines/` | DDL 任务、管理查询和个人默认提醒配置 |
 | `infrastructure/storage/access/` | 身份组和只读群配置 |
-| `infrastructure/storage/broadcasts/` | 广播接收会话、拒收偏好和更新文案读取 |
+| `infrastructure/storage/broadcasts/` | 广播接收会话、拒收偏好、升级公告投递状态和更新文案读取 |
 | `infrastructure/messaging/` | OneBot 收发、消息展开和输出分段/合并转发 |
 | `infrastructure/model.py` | 模型请求与用量记录 |
 | `presentation/` | 帮助、昵称/群名、费用和广播格式 |
@@ -27,7 +27,7 @@
 
 各层按职责建立子包，包入口仅说明用途，调用方直接导入实际模块。领域层只保留共享规则与值对象，不依赖应用、存储或展示实现。启动组装集中在 `application/runtime.py`，命令分发集中在 `application/dispatcher.py`。
 
-默认广播内容保留在 `src/UPDATE.md`，由 `infrastructure/storage/broadcasts/updates.py` 每次读取。字体位于 `assets/fonts/`；移动渲染或读取模块时须同步校验资源定位。打包递归收集所有业务 Python 子包，并显式包含更新文案。
+默认广播内容保留在 `src/UPDATE.md`，由 `infrastructure/storage/broadcasts/updates.py` 每次读取。迁移从旧数据版本升级时，先在 `conversations.sqlite3` 写入升级公告任务，再更新版本标记；运行时在补全历史私聊记录后固定本次符合条件的接收名单。账号路由确认后，独立后台任务按原平台和账号发送；投递前重新检查身份组与拒收偏好，逐人持久化尝试状态，避免重复启动或异常中断后重复广播。后台任务与运行时一起关闭，不阻塞 DDL 调度。字体位于 `assets/fonts/`；移动渲染或读取模块时须同步校验资源定位。打包递归收集所有业务 Python 子包，并显式包含更新文案。
 
 ```sh
 python -m src.tooling.check

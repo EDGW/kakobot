@@ -13,6 +13,7 @@ from ..infrastructure.storage.access.readonly import ReadonlyPolicy
 from ..infrastructure.storage.access.roles import RoleStore
 from ..infrastructure.storage.audit import AuditStore
 from ..infrastructure.storage.broadcasts.conversations import ConversationStore
+from ..infrastructure.storage.broadcasts.upgrades import UpgradeStore
 from ..infrastructure.storage.deadlines.preferences import PreferenceStore
 from ..infrastructure.storage.deadlines.tasks import DeadlineStore
 from ..infrastructure.storage.migration import migrate
@@ -31,6 +32,7 @@ from .messaging.announcements import AnnouncementService
 from .messaging.help import HelpService
 from .messaging.release import ReleaseService
 from .messaging.summary import SummaryService
+from .messaging.upgrade_announcements import UpgradeAnnouncements
 from .roles.management import SuperRoleService
 from .roles.service import RoleService
 from .sessions import UserSessions
@@ -75,6 +77,10 @@ class Runtime:
         analysis = AutomaticAnalysis(
             self.roles, config, deadlines, sessions, self.model
         )
+        announcements = AnnouncementService(self.roles, self.conversations, self.guard)
+        self.upgrade_announcements = UpgradeAnnouncements(
+            announcements, UpgradeStore(self.conversations), resolve_gateway
+        )
         self.dispatcher = Dispatcher(
             self.roles,
             self.readonly,
@@ -85,7 +91,7 @@ class Runtime:
             SummaryService(self.model, sessions, authorizer, self.guard),
             analysis,
             CostService(self.usage),
-            AnnouncementService(self.roles, self.conversations, self.guard),
+            announcements,
             SuperRoleService(self.roles, self.audit, self.readonly),
             SuperDeadlineService(deadlines, self.audit),
             self.requests,
@@ -126,6 +132,7 @@ class Runtime:
     async def close(self):
         self.closing = True
         await self.scheduler.stop()
+        await self.upgrade_announcements.stop()
         for task in self.active:
             task.cancel()
         if self.active:
