@@ -161,6 +161,16 @@
             "description": "群默认系统提示词，群 admin 可覆盖",
             "type": "string",
             "default": "符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容"
+          },
+          "tools.query_docs.enabled": {
+            "description": "项目文档查询（默认开启）",
+            "type": "bool",
+            "default": true
+          },
+          "tools.query_docs.max_calls_per_request": {
+            "description": "项目文档每请求查询次数",
+            "type": "int",
+            "default": 3
           }
         }
       },
@@ -227,6 +237,11 @@
             "description": "tools.read_session_history.max_calls_per_request",
             "type": "int",
             "default": 8
+          },
+          "tools.query_docs.max_calls_per_request": {
+            "description": "项目文档查询次数全局上限",
+            "type": "int",
+            "default": 8
           }
         }
       },
@@ -251,6 +266,11 @@
           },
           "read_session_history": {
             "description": "read_session_history",
+            "type": "bool",
+            "default": true
+          },
+          "query_docs": {
+            "description": "允许只读查询随插件提供的 docs 文档",
             "type": "bool",
             "default": true
           }
@@ -360,6 +380,6 @@
         "default": 4000
       }
     },
-    "hint": "群独立 Key 承担模型及 DeepSeek Search/Fetch 费用，不使用运营者搜索凭据。系统默认允许工具，群默认关闭。"
+    "hint": "模型及联网由本群 Key 付费。系统允许工具，群默认仅开启项目文档查询，其他工具默认关闭。"
   }
 }

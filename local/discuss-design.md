@@ -148,7 +148,7 @@ DeepSeek Responses 地址由系统配置确定，只允许全局 super 管理，
 
 增加全机器人每日 token 总预算，初始 5000000；与各群每日预算同时预留和扣减，由全局 super 调整，不能通过增加群数绕过。按平台和机器人账号分别统计总预算。
 
-工具系统总开关初始全部开启，各群工具开关初始全部关闭。DeepSeek Responses 默认地址 https://api.deepseek.com；模型白名单默认包含 deepseek-v4-flash、deepseek-flash、deepseek-v4-pro、deepseek-pro，无需手动添加，群仍需配置自己的 Key 和模型，思考强度默认 low，以目标模型实际支持为前提。
+工具系统总开关初始全部开启，各群默认仅开启 query_docs 文档查询，其余工具关闭。DeepSeek Responses 默认地址 https://api.deepseek.com；模型白名单默认包含 deepseek-v4-flash、deepseek-flash、deepseek-v4-pro、deepseek-pro，无需手动添加，群仍需配置自己的 Key 和模型，思考强度默认 low，以目标模型实际支持为前提。
 
 ### 5.4 查看与凭据保护
 
@@ -203,7 +203,7 @@ DeepSeek Responses 地址由系统配置确定，只允许全局 super 管理，
 固定展示输入 tokens、输出 tokens、缓存命中的输入 tokens，以及实际工具调用次数，例如：
 
 ```text
-本轮用量：输入 3,240 tokens（缓存命中 2,048），输出 560 tokens；工具调用 3 次。
+tokens input: 386(+128) output: 44. toolcall(s) 0.
 ```
 
 - 输入和输出分别对本轮每次模型调用的 usage 求和；缓存命中取端点明确返回的 cached input tokens 并求和，是输入的子集，不再额外计入总消耗。
@@ -216,7 +216,7 @@ DeepSeek Responses 地址由系统配置确定，只允许全局 super 管理，
 
 ## 7. 工具边界
 
-第一版工具建议分为 `search_web`、`fetch_webpage`、`query_group_data`、`read_session_history`。具体业务查询范围单独定义，默认全部关闭。
+第一版工具建议分为 `search_web`、`fetch_webpage`、`query_group_data`、`read_session_history`。具体业务查询范围单独定义，默认关闭；新增 query_docs 只读项目文档查询默认开启。
 
 工具只有在系统允许、群允许且未超过本请求对应上限和总上限时才可执行；每次执行前重新检查群开关、权限、会话状态和最新配置。模型输出一个工具调用不代表获准执行。
 
@@ -420,3 +420,11 @@ local/discuss-design.md               # 本设计稿
 - /role 使用与群配置共用的本地图片布局，按全局及群展示权限来源；私聊显示编码，群聊只显示当前群，群较多时分图。
 - 分阶段提交渲染修复、功能实现与版本准备；使用 make publish 打包 v2.0.0-beta.1，推送功能分支和版本标签，发布 GitHub pre-release，不并入主分支。
 - 支持从 alpha.1/alpha.2/alpha.3 升级，保留历史数据和公告机制；已编号 CHANGELOG 条目不修改。
+
+
+## beta.1.1：简洁用量与文档查询技能
+
+- 用量首行固定为 tokens input: 386(+128) output: 44. toolcall(s) 0.；括号中的缓存属于 input 子集，搜索/网页来源仍单列。
+- query_docs 提供目录、关键词搜索和按 path/offset 分页读取，只允许随插件提供的 docs Markdown，无任意文件读取或执行能力。默认系统及每群开启，单工具默认 3 次/请求，初始系统上限 8 次，受权限、预算和总工具次数约束。
+- 旧全局配置自动补齐文档工具设置，保留已显式关闭的配置。
+- make publish 打包 v2.0.0-beta.1.1，commit 并 push 功能分支，不推送标签、不创建 GitHub Release/pre-release。

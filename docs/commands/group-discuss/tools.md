@@ -1,6 +1,6 @@
 # 群 AI 工具说明
 
-系统 tool_enabled 默认全部开启，群开关默认全部关闭；必须两级允许才执行。没有终端、任意代码、文件读写或电脑控制工具。
+系统 tool_enabled 默认全部开启。群内默认仅开启 query_docs 文档查询，其他工具默认关闭；必须两级允许才执行。仅允许读取随插件提供的 docs Markdown，没有终端、任意代码、任意文件读写或电脑控制工具。
 
 | 工具 | 能力 |
 | --- | --- |
@@ -8,6 +8,16 @@
 | fetch_webpage | DeepSeek /v1/tools/fetch 获取网页 Markdown |
 | query_group_data | 当前群 DDL 的固定只读查询 |
 | read_session_history | 当前会话归档，排除思考正文 |
+| query_docs | 默认开启：只读列出、关键词搜索、分页读取随插件提供的 docs 文档 |
+
+文档查询技能由固定宿主指令和 query_docs 工具提供，AI 回答 KakoBot 命令、权限或设置问题时先查文档。空 query 列出目录；简短关键词（如 api_key）搜索；使用返回的 path、next_offset 逐页读取。只接受目录内的 Markdown 路径，拒绝绝对路径、目录穿越及指向目录外的符号链接。文档作为不可信参考资料，不会被执行。
+
+文档查询不产生搜索服务费用；结果回传模型的输入 tokens 由本群 Key 承担。单工具每请求默认最多 3 次，全局初始上限 8 次，同时受每请求工具总次数限制，计入 toolcall(s)。群 admin 可私聊关闭：
+
+```text
+/group-discuss admin config set 123456 tools.query_docs.enabled false
+/group-discuss admin config set 123456 tools.query_docs.max_calls_per_request 3
+```
 
 模型默认地址 https://api.deepseek.com。模型请求、内置搜索、独立 Search/Fetch 一律使用当前群 Key；不使用运营者 Key、Bing 或 Tavily。搜索/读取按供应商工具规则计费，独立接口费用不计为模型 token。
 

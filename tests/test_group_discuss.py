@@ -169,10 +169,10 @@ async def test_conversation_and_reply_chain(service):
     scope = await enable(service, g)
     await service.handle(ctx("2", "10", "你好", "10", True), g)
     assert len(g.sent) == 1
-    assert "输入 100" in g.sent[-1]["text"]
-    assert "输出 20" in g.sent[-1]["text"]
-    assert "缓存命中 40" in g.sent[-1]["text"]
-    assert "工具调用 0 次" in g.sent[-1]["text"]
+    assert "tokens input: 100" in g.sent[-1]["text"]
+    assert "output: 20" in g.sent[-1]["text"]
+    assert "(+40)" in g.sent[-1]["text"]
+    assert "toolcall(s) 0." in g.sent[-1]["text"]
     assert not service.guard.errors
     session = service.store.message_session(scope, "101")
     assert session
@@ -245,10 +245,10 @@ async def test_tool_roundtrip_and_token_aggregation(service):
     await service.handle(ctx("2", "10", "查一下DDL", "20", True), g)
     assert not service.guard.errors, service.guard.errors
     assert len(payloads) == 2
-    assert "输入 200" in g.sent[-1]["text"]
-    assert "输出 40" in g.sent[-1]["text"]
-    assert "缓存命中 80" in g.sent[-1]["text"]
-    assert "工具调用 1 次" in g.sent[-1]["text"]
+    assert "tokens input: 200" in g.sent[-1]["text"]
+    assert "output: 40" in g.sent[-1]["text"]
+    assert "(+80)" in g.sent[-1]["text"]
+    assert "toolcall(s) 1." in g.sent[-1]["text"]
     assert len(service.store.sessions(scope)) == 1
 
 
@@ -413,7 +413,7 @@ async def test_context_summary_counts_toward_turn_usage(service):
     assert not service.guard.errors
     assert len(requests) == 2
     assert "已确认的历史摘要" in str(requests[-1]["input"])
-    assert "输入 200" in g.sent[-1]["text"]
+    assert "tokens input: 200" in g.sent[-1]["text"]
     saved = service.store.session(scope, session)
     assert saved["summary_offset"] > 0
     # Another short round reuses the existing summary instead of summarizing every round.
@@ -486,7 +486,7 @@ async def test_queue_cancellation_and_unknown_usage(service):
     await service.http.aclose()
     service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     await service.handle(ctx("2", "10", "你好", "41", True), g)
-    assert "输入 未知" in g.sent[-1]["text"]
+    assert "tokens input: 未知" in g.sent[-1]["text"]
     assert service.store.stats(scope, "today")["unknown_requests"] == 1
 
 
@@ -520,7 +520,7 @@ def test_upgrade_backup_and_prerelease_version(tmp_path):
     assert (tmp_path / "migration-backup-1.3.2" / "roles.json").is_file()
     assert (tmp_path / "migration-backup-1.3.2" / "deadlines.sqlite3").is_file()
     migrate(tmp_path)  # repeat is safe
-    assert ReleaseInfoStore().version() == "v2.0.0-beta.1"
+    assert ReleaseInfoStore().version() == "v2.0.0-beta.1.1"
 
 
 @pytest.mark.asyncio
@@ -619,13 +619,15 @@ async def test_search_routing_and_group_key(service, model, native):
     await service.handle(ctx("2", "10", "搜索test", "search-1", True), g)
     assert not service.guard.errors, service.guard.errors
     assert len(requests) == (1 if native else 3)
-    assert "工具调用 1 次" in g.sent[-1]["text"]
+    assert "toolcall(s) 1." in g.sent[-1]["text"]
     assert (
         "内置（DeepSeek Responses）"
         if native
         else "外置（DeepSeek Search/Fetch，同群 Key）"
     ) in g.sent[-1]["text"]
-    assert ("输入 100" if native else "输入 200") in g.sent[-1]["text"]
+    assert ("tokens input: 100" if native else "tokens input: 200") in g.sent[-1][
+        "text"
+    ]
     assert service.store.secret(scope) == "sk-example-123456789"
 
 
@@ -672,7 +674,7 @@ async def test_native_gates_and_independent_limit(service):
     session = service.store.create_session(scope, "2", 5)
     identifier = service.store.new_turn(session, "2")
     turn = Turn(service, ctx("2", "10"), g, scope, session, identifier)
-    assert not turn.native_search_enabled()  # Group tools default to disabled.
+    assert not turn.native_search_enabled()  # Network tools default to disabled.
     for name in ("search_web", "fetch_webpage"):
         await command(
             service,
@@ -812,7 +814,8 @@ async def test_help_cards_and_aliases(service, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "previous_version", ["2.0.0-alpha.1", "2.0.0-alpha.2", "2.0.0-alpha.3"]
+    "previous_version",
+    ["2.0.0-alpha.1", "2.0.0-alpha.2", "2.0.0-alpha.3", "2.0.0-beta.1"],
 )
 def test_alpha_upgrade_preserves_state_and_queues_announcement(
     tmp_path, previous_version
@@ -1062,3 +1065,166 @@ def test_role_cards_pagination_and_no_roles():
             assert picture.width == 1120
             assert picture.height < 10000
     assert len(render_role_cards("用户（3）", {}, [], private=True)) == 1
+
+
+def test_compact_usage_footer():
+    from src.presentation.group_discuss.output import usage_footer
+
+    assert usage_footer(
+        {
+            "input": "386",
+            "cached": "128",
+            "output": "44",
+            "tools": 0,
+            "search_source": "未使用",
+        }
+    ) == ("tokens input: 386(+128) output: 44. toolcall(s) 0.\n搜索/网页来源：未使用。")
+
+
+def test_docs_catalog_search_paging_and_file_boundary(tmp_path):
+    from src.infrastructure.group_discuss.docs import query_docs
+
+    root = tmp_path / "docs"
+    root.mkdir()
+    (root / "config.md").write_text("# 配置\napi_key 密钥说明\n" + "文档正文" * 200)
+    outside = tmp_path / "secret.md"
+    outside.write_text("never expose this")
+    (root / "escape.md").symlink_to(outside)
+    (root / "script.py").write_text("not documentation")
+    listing = query_docs(directory=root)
+    assert [row["path"] for row in listing["results"]] == ["config.md"]
+    assert "密钥说明" in query_docs("api_key", directory=root)["results"][0]["snippet"]
+    assert query_docs("absent-keyword", directory=root)["results"] == []
+    page = query_docs(path="config.md", directory=root)
+    assert page["next_offset"] == 400
+    assert len(page["text"]) == 400
+    next_page = query_docs(path="config.md", offset=page["next_offset"], directory=root)
+    assert next_page["offset"] == 400
+    for path in ["../secret.md", str(outside), "escape.md", "script.py"]:
+        with pytest.raises(BusinessError):
+            query_docs(path=path, directory=root)
+    with pytest.raises(BusinessError):
+        query_docs(offset=-1, directory=root)
+
+
+@pytest.mark.asyncio
+async def test_docs_tool_default_roundtrip_and_disable(service):
+    from src.application.group_discuss.harness import Turn
+
+    g = Gateway()
+    scope = await enable(service, g)
+    assert service.config(scope)["tools.query_docs.enabled"] is True
+    payloads = []
+
+    async def handler(request):
+        payload = json.loads(request.content)
+        payloads.append(payload)
+        assert request.url.host == "deepseek.example"  # No external search requests.
+        if len(payloads) == 1:
+            names = {t.get("name") for t in payload.get("tools", [])}
+            assert "query_docs" in names
+            assert "search_web" not in names
+            output = [
+                {
+                    "type": "function_call",
+                    "id": "fc_docs",
+                    "call_id": "docs_1",
+                    "name": "query_docs",
+                    "arguments": '{"query":"api_key"}',
+                    "status": "completed",
+                }
+            ]
+        else:
+            outputs = [
+                item
+                for item in payload["input"]
+                if item.get("type") == "function_call_output"
+            ]
+            assert outputs
+            result = json.loads(outputs[0]["output"])
+            assert any("group-discuss" in item["path"] for item in result["results"])
+            output = answer(
+                "请私聊使用 /group-discuss admin config set GROUP api_key KEY"
+            )
+        return httpx.Response(200, json=response(output))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await service.handle(ctx("2", "10", "怎么配置api_key？", "docs-1", True), g)
+    assert not service.guard.errors, service.guard.errors
+    assert len(payloads) == 2
+    assert "toolcall(s) 1." in g.sent[-1]["text"]
+    assert "搜索/网页来源：未使用" in g.sent[-1]["text"]
+    session = service.store.create_session(scope, "2", 5)
+    turn_id = service.store.new_turn(session, "2")
+    turn = Turn(service, ctx("2", "10"), g, scope, session, turn_id)
+    await command(
+        service,
+        g,
+        "/group-discuss admin config set 10 tools.query_docs.max_calls_per_request 1",
+        "2",
+    )
+    assert "results" in await turn.tool("query_docs", query="api_key")
+    assert "不可用" in await turn.tool("query_docs", query="api_key")
+    assert service.store.turn_usage(turn_id)["tools"] == 1
+    await command(
+        service,
+        g,
+        "/group-discuss admin config set 10 tools.query_docs.enabled false",
+        "2",
+    )
+    assert "不可用" in await turn.tool("query_docs", query="api_key")
+    assert service.store.turn_usage(turn_id)["tools"] == 1
+    await command(
+        service, g, "/super group-discuss limits set tool_enabled.query_docs false"
+    )
+    assert service.config(scope)["tools.query_docs.enabled"] is False
+    with pytest.raises(BusinessError):
+        await command(
+            service,
+            g,
+            "/group-discuss admin config set 10 tools.query_docs.enabled true",
+            "2",
+        )
+
+
+@pytest.mark.asyncio
+async def test_legacy_policy_adds_docs_tool_preserving_overrides(service, tmp_path):
+    old = system_defaults()
+    for section, keys in {
+        "defaults": [
+            "tools.query_docs.enabled",
+            "tools.query_docs.max_calls_per_request",
+        ],
+        "maxima": ["tools.query_docs.max_calls_per_request"],
+        "tool_enabled": ["query_docs"],
+    }.items():
+        for key in keys:
+            old[section].pop(key)
+    old["defaults"]["max_sessions"] = 2
+    old["tool_enabled"]["search_web"] = False
+    directory = tmp_path / "legacy"
+    directory.mkdir()
+    atomic_json(directory / "roles.json", empty_roles())
+    atomic_json(directory / "group_discuss_policy.json", old)
+    migrated = DiscussService(
+        directory,
+        {"group_discuss": old},
+        RoleStore(directory / "roles.json", "1"),
+        service.guard,
+        service.http,
+        service.deadlines,
+    )
+    try:
+        config = migrated.config(scope_key(ctx(group="10")))
+        assert config["tools.query_docs.enabled"] is True
+        assert config["max_sessions"] == 2
+        assert migrated.policy["tool_enabled"]["search_web"] is False
+        migrated.policy["tool_enabled"]["query_docs"] = False
+        validate_system(migrated.policy)
+        assert (
+            migrated.config(scope_key(ctx(group="10")))["tools.query_docs.enabled"]
+            is False
+        )
+    finally:
+        migrated.store.close()

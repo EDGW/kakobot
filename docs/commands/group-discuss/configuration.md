@@ -44,7 +44,7 @@
 /group-discuss admin config set 123456 daily_token_budget 200000
 ```
 
-**群内所有工具默认关闭。** 需要搜索和读取网页时再启用：
+**群内默认只开启项目文档查询，联网和其他工具默认关闭。** 需要搜索和读取网页时再启用：
 
 ```text
 /group-discuss admin config set 123456 tools.search_web.enabled true
@@ -124,7 +124,7 @@
 
 ## 群配置：每种工具的开关与限次
 
-四种工具分别具有两个独立设置项，下面列出全部八项。群开关初始均为 false；单工具每请求次数初始为 3，系统初始上限为 8，允许设置为 0 以禁止该工具执行。
+五种工具分别具有两个独立设置项，下面列出全部十项。文档查询 query_docs 的群开关初始为 true，其他群开关为 false；单工具每请求次数初始为 3，系统初始上限为 8，允许设置为 0 以禁止该工具执行。
 
 | 工具 | 群开关设置项 | 单工具次数设置项 | 能力 |
 | --- | --- | --- | --- |
@@ -132,6 +132,7 @@
 | 网页读取 | `tools.fetch_webpage.enabled` | `tools.fetch_webpage.max_calls_per_request` | 调用 DeepSeek Fetch 读取公开 HTTP(S) 网页正文 |
 | 群数据查询 | `tools.query_group_data.enabled` | `tools.query_group_data.max_calls_per_request` | 只读查询当前群 DDL，不修改业务数据 |
 | 会话历史 | `tools.read_session_history.enabled` | `tools.read_session_history.max_calls_per_request` | 读取本会话归档，每次最多 8 条消息项，排除思考正文 |
+| 项目文档查询 | `tools.query_docs.enabled` | `tools.query_docs.max_calls_per_request` | 默认开启，只读搜索、列出和分页读取随插件提供的 docs 文档 |
 
 独立工具执行前检查单工具和总次数，实际执行失败也计次数。内置搜索可包含网页访问，须同时允许搜索和网页读取；DeepSeek 忽略内置搜索的 max_tool_calls，客户端只能记录响应返回的动作并阻止后续超额调用，无法保证单次响应内不超限。
 
@@ -153,14 +154,15 @@
 | `allowed_efforts` | `["low","medium","high"]` | 群可选择的思考强度；仍需目标模型支持 |
 | `allowed_user_modes` | `["whitelist","all","blacklist"]` | 群可选择的用户准入方式 |
 | `defaults.KEY` | 本页各群初始值 | 设置群继承的默认配置；KEY 可为任一群设置项，但不包括 api_key |
-| `maxima.KEY` | 本页各数值初始上限 | 设置群数值项的最大值，包括四种工具各自的次数；不用于字符串、枚举和开关 |
+| `maxima.KEY` | 本页各数值初始上限 | 设置群数值项的最大值，包括五种工具各自的次数；不用于字符串、枚举和开关 |
 | `tool_enabled.search_web` | `true` | 是否允许各群开启搜索 |
 | `tool_enabled.fetch_webpage` | `true` | 是否允许各群开启网页读取 |
 | `tool_enabled.query_group_data` | `true` | 是否允许各群开启当前群 DDL 查询 |
 | `tool_enabled.read_session_history` | `true` | 是否允许各群开启本会话历史读取 |
+| `tool_enabled.query_docs` | `true` | 是否允许各群查询项目文档；默认各群开启 |
 | `system_prompt_max_chars` | 4000 字符 | 群系统提示词长度上限 |
 
-因此，“系统允许工具”和“群默认启用工具”是两项不同设置：初始 tool_enabled 全 true，defaults 中四种 tools.NAME.enabled 全 false。群开关即使已设为 true，也不能突破系统禁用。
+因此，“系统允许工具”和“群默认启用工具”是两项不同设置：初始 tool_enabled 全 true，defaults 中仅 tools.query_docs.enabled 为 true，其余四种工具为 false。群开关即使已设为 true，也不能突破系统禁用。
 
 ```text
 /super group-discuss limits set defaults.max_sessions 5

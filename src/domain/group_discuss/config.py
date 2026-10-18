@@ -6,7 +6,13 @@ from urllib.parse import urlsplit
 
 from ..errors import BusinessError
 
-TOOLS = ("search_web", "fetch_webpage", "query_group_data", "read_session_history")
+TOOLS = (
+    "search_web",
+    "fetch_webpage",
+    "query_group_data",
+    "read_session_history",
+    "query_docs",
+)
 DEFAULT_SYSTEM_PROMPT = "符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容"
 DEFAULTS = {
     "system_prompt": DEFAULT_SYSTEM_PROMPT,
@@ -33,7 +39,7 @@ MAXIMA = {
     "max_tool_calls_per_request": 12,
 }
 for _tool in TOOLS:
-    DEFAULTS[f"tools.{_tool}.enabled"] = False
+    DEFAULTS[f"tools.{_tool}.enabled"] = _tool == "query_docs"
     DEFAULTS[f"tools.{_tool}.max_calls_per_request"] = 3
     MAXIMA[f"tools.{_tool}.max_calls_per_request"] = 8
 
@@ -67,6 +73,21 @@ def system_defaults():
         "history_retention_days": 30,
         "system_prompt_max_chars": 4000,
     }
+
+
+def upgrade_tools_policy(policy, fallback=None):
+    """Add new docs-tool settings to old nested overrides without changing choices."""
+    base = fallback if fallback is not None else system_defaults()
+    for section, keys in {
+        "defaults": (
+            "tools.query_docs.enabled",
+            "tools.query_docs.max_calls_per_request",
+        ),
+        "maxima": ("tools.query_docs.max_calls_per_request",),
+        "tool_enabled": ("query_docs",),
+    }.items():
+        for key in keys:
+            policy[section].setdefault(key, base[section][key])
 
 
 def parse_value(raw):
@@ -158,7 +179,9 @@ def validate_system(policy):
         # Empty model is intentionally not ready; global tool switches may override defaults.
         if key == "model_name" and value == "":
             continue
-        if key.endswith(".enabled") and value is False:
+        if key.endswith(".enabled"):
+            if type(value) is not bool:
+                raise BusinessError("默认工具开关须为 true 或 false。")
             continue
         validate_group(
             key,

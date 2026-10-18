@@ -36,6 +36,7 @@ SECTIONS = [
                 ("fetch_webpage", "网页读取"),
                 ("query_group_data", "群 DDL 查询"),
                 ("read_session_history", "会话历史"),
+                ("query_docs", "项目文档查询"),
             )
             for suffix in ("enabled", "max_calls_per_request")
         },

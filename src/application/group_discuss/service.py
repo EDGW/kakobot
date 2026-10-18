@@ -13,6 +13,7 @@ from ...domain.group_discuss.config import (
     mask_key,
     parse_value,
     system_defaults,
+    upgrade_tools_policy,
     validate_group,
     validate_system,
 )
@@ -47,12 +48,15 @@ class DiscussService:
         deployed.pop("search_api_key", None)
         deployed.pop("search_provider", None)
         self.policy.update(deployed)
+        upgrade_tools_policy(self.policy)
         # Command changes are a durable override of the deployment defaults.
         if self.policy_path.exists():
+            fallback = copy.deepcopy(self.policy)
             saved = read_json(self.policy_path)
             saved.pop("search_api_key", None)
             saved.pop("search_provider", None)
             self.policy.update(saved)
+            upgrade_tools_policy(self.policy, fallback)
         validate_system(self.policy)
         for row in self.store.db.execute("SELECT scope FROM secrets"):
             self.guard.secrets.register(self.store.secret(row[0]))

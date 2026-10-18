@@ -3,7 +3,7 @@
 
 def usage_footer(usage):
     return (
-        f"本轮用量：输入 {usage['input']} tokens（缓存命中 {usage['cached']}），"
-        f"输出 {usage['output']} tokens；工具调用 {usage['tools']} 次。\n"
+        f"tokens input: {usage['input']}(+{usage['cached']}) "
+        f"output: {usage['output']}. toolcall(s) {usage['tools']}.\n"
         f"搜索/网页来源：{usage['search_source']}。"
     )
