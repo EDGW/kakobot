@@ -834,6 +834,7 @@ async def test_help_cards_and_aliases(service, tmp_path):
         "2.0.0-beta.1.2",
         "2.0.0-beta.1.3",
         "2.0.0-beta.1.4",
+        "2.0.0-beta.1.5",
     ],
 )
 def test_prerelease_upgrade_preserves_state_and_queues_announcement(
@@ -1701,3 +1702,539 @@ async def test_global_moderation_prompt_is_validated_authorized_and_used(service
     await service.handle(ctx("2", "10", "你好", "moderation-prompt", True), g)
     assert len(requests) == 1
     assert not service.guard.errors
+
+
+@pytest.mark.asyncio
+async def test_business_commands_batch_identity_permissions_and_dedupe(
+    service, tmp_path
+):
+    from unittest.mock import AsyncMock
+
+    from src.application.authorization import Authorizer
+    from src.application.group_discuss.commands import (
+        BusinessCommands,
+        execute_commands,
+    )
+    from src.application.group_discuss.harness import Turn
+
+    g = Gateway()
+    scope = await enable(service, g)
+    service.policy["defaults"]["tools.execute_commands.enabled"] = True
+    session = service.store.create_session(scope, "2", 5)
+    identifier = service.store.new_turn(session, "2")
+    turn = Turn(service, ctx("2", "10"), g, scope, session, identifier)
+    actions = []
+
+    async def dispatch(action, gateway, names):
+        actions.append(action)
+        if action.spec.subcommand == "view":
+            await gateway.send_image(b"image", group="10")
+            return None
+        return "completed " + action.spec.name
+
+    dispatcher = SimpleNamespace(
+        readonly=SimpleNamespace(readonly_groups=set()),
+        authorizer=Authorizer(service.roles),
+        guard=service.guard,
+        execute=AsyncMock(side_effect=dispatch),
+    )
+    service.command_executor = BusinessCommands(dispatcher)
+    # Discuss admin does not grant DDL creation permission.
+    results = await execute_commands(
+        turn,
+        ['/ddl add-strict "test" [2099-01-01 12:00] -30min', "/version", "/ddl view"],
+    )
+    assert [r["status"] for r in results] == ["rejected", "completed", "completed"]
+    assert all(a.context.actor == "2" and a.context.group == "10" for a in actions)
+    assert actions[0].context.segments == [
+        {"type": "text", "data": {"text": "/version"}}
+    ]
+    assert (
+        service.store.message_session(
+            scope,
+            g.sent[-1]["message_id"]
+            if "message_id" in g.sent[-1]
+            else str(100 + len(g.sent)),
+        )
+        == session
+    )
+    again = await execute_commands(turn, ["/version"])
+    assert again[0]["reused"] and len(actions) == 2
+    # All unsafe commands reject before reaching the dispatcher, including aliases.
+    for command_text in [
+        "/ddl add test",
+        "/summary",
+        "/role add 3 admin",
+        "/super role add 3 admin",
+        "/bin/sh",
+        "/ddl clear all",
+    ]:
+        with pytest.raises(BusinessError):
+            await service.command_executor.execute(turn, command_text)
+    assert len(actions) == 2
+    # Program checks immutable initiator; model cannot switch it to global Super.
+    turn.ctx = ctx("1", "10")
+    assert (await execute_commands(turn, ["/help"]))[0]["status"] == "blocked"
+    turn.ctx = ctx("2", "10")
+    dispatcher.readonly.readonly_groups.add("10")
+    with pytest.raises(BusinessError, match="Readonly"):
+        await service.command_executor.execute(turn, "/version")
+    dispatcher.readonly.readonly_groups.clear()
+    service.store.finish_turn(identifier, "failed")
+    next_id = service.store.new_turn(session, "2")
+    turn.id = next_id
+    assert (await execute_commands(turn, ["/help"]))[0]["status"] == "blocked"
+    assert len(actions) == 2
+
+
+@pytest.mark.asyncio
+async def test_business_commands_unknown_results_and_session_cap(service):
+    from unittest.mock import AsyncMock
+
+    from src.application.group_discuss.commands import execute_commands
+    from src.application.group_discuss.harness import Turn
+
+    g = Gateway()
+    scope = await enable(service, g)
+    service.policy["defaults"]["tools.execute_commands.enabled"] = True
+    session = service.store.create_session(scope, "2", 5)
+    identifier = service.store.new_turn(session, "2")
+    turn = Turn(service, ctx("2", "10"), g, scope, session, identifier)
+    executor = AsyncMock(side_effect=RuntimeError("transport failed after write"))
+    service.command_executor = SimpleNamespace(execute=executor)
+    first = await execute_commands(turn, ["/version"])
+    assert first[0]["status"] == "uncertain"
+    assert (await execute_commands(turn, ["/version"]))[0]["reused"]
+    assert executor.await_count == 1
+    rest = await execute_commands(
+        turn, ["/help", "/role", "/ddl list", "/ddl view", "/changelog"]
+    )
+    assert [r["status"] for r in rest] == ["uncertain"] * 4 + ["blocked"]
+    assert executor.await_count == 5
+    # A pending claim survives reopening; never repeat a possibly committed write.
+    fresh = service.store.create_session(scope, "2", 5)
+    fresh_turn = service.store.new_turn(fresh, "2")
+    assert service.store.claim_command(scope, fresh, fresh_turn, "hash") is None
+    with pytest.raises(BusinessError, match="未确认"):
+        service.store.claim_command(scope, fresh, fresh_turn, "hash")
+
+
+@pytest.mark.asyncio
+async def test_business_commands_tool_schema_roundtrip_and_later_turn_hidden(service):
+    from unittest.mock import AsyncMock
+
+    from src.application.group_discuss.harness import Turn, run_turn
+
+    g = Gateway()
+    scope = await enable(service, g)
+    assert not service.config(scope)["tools.execute_commands.enabled"]
+    service.policy["defaults"]["tools.execute_commands.enabled"] = True
+    service.command_executor = SimpleNamespace(execute=AsyncMock(return_value="OK"))
+    session = service.store.create_session(scope, "2", 5)
+    identifier = service.store.new_turn(session, "2")
+    turn = Turn(service, ctx("2", "10"), g, scope, session, identifier)
+    requests = []
+    later = False
+
+    async def handler(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        assert request.headers["authorization"] == "Bearer sk-example-123456789"
+        tools = {t["name"]: t for t in payload["tools"] if t["type"] == "function"}
+        assert ("execute_commands" in tools) is not later
+        if len(requests) == 1:
+            assert set(tools["execute_commands"]["parameters"]["properties"]) == {
+                "commands"
+            }
+            output = [
+                {
+                    "type": "function_call",
+                    "id": "fc_batch",
+                    "call_id": "call_batch",
+                    "name": "execute_commands",
+                    "arguments": json.dumps({"commands": ["/version", "/ddl list"]}),
+                    "status": "completed",
+                }
+            ]
+        else:
+            output = answer("完成")
+        return httpx.Response(200, json=response(output))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    assert await run_turn(turn, "查看版本和DDL") == "完成"
+    assert service.command_executor.execute.await_count == 2
+    assert service.store.turn_usage(identifier)["tools"] == 1
+    service.store.finish_turn(identifier, "failed")
+    later = True
+    turn.id = service.store.new_turn(session, "2")
+    await run_turn(turn, "再执行")
+    assert "不可用" in await turn.tool("execute_commands", commands=["/version"])
+    assert service.command_executor.execute.await_count == 2
+
+
+def test_old_policy_migrates_business_command_tool():
+    from src.domain.group_discuss.config import upgrade_tools_policy
+
+    policy = system_defaults()
+    policy["defaults"].pop("tools.execute_commands.enabled")
+    policy["defaults"].pop("tools.execute_commands.max_calls_per_request")
+    policy["maxima"].pop("tools.execute_commands.max_calls_per_request")
+    policy["tool_enabled"].pop("execute_commands")
+    policy["tool_enabled"]["search_web"] = False
+    upgrade_tools_policy(policy)
+    validate_system(policy)
+    assert policy["defaults"]["tools.execute_commands.enabled"] is False
+    assert policy["tool_enabled"]["execute_commands"] is True
+    assert policy["tool_enabled"]["search_web"] is False
+
+
+@pytest.mark.asyncio
+async def test_business_commands_real_ddl_handler_never_uses_global_ai(
+    service, tmp_path
+):
+    from unittest.mock import AsyncMock
+
+    from src.application.authorization import Authorizer
+    from src.application.deadlines.service import DeadlineService
+    from src.application.group_discuss.commands import (
+        BusinessCommands,
+        execute_commands,
+    )
+    from src.application.group_discuss.harness import Turn
+    from src.infrastructure.storage.deadlines.tasks import DeadlineStore
+
+    g = Gateway()
+    scope = await enable(service, g)
+    service.policy["defaults"]["tools.execute_commands.enabled"] = True
+    session = service.store.create_session(scope, "1", 5)
+    identifier = service.store.new_turn(session, "1")
+    turn = Turn(service, ctx("1", "10"), g, scope, session, identifier)
+    import sqlite3
+
+    from src.infrastructure.storage.deadlines.tasks import initialize_schema
+
+    path = tmp_path / "commands-deadlines.sqlite3"
+    with sqlite3.connect(path) as db:
+        initialize_schema(db)
+        db.execute("PRAGMA user_version=2")
+    data = DeadlineStore(path, time.time())
+    g.self_id = "9"
+    g.bot = SimpleNamespace(call_action=AsyncMock(return_value={}))
+    readonly = SimpleNamespace(readonly_groups=set(), listeners=[])
+    authorizer = Authorizer(service.roles)
+    extractor = SimpleNamespace(
+        extract=AsyncMock(side_effect=AssertionError("global AI forbidden"))
+    )
+    deadlines = DeadlineService(
+        data, service.roles, readonly, service.guard, extractor, authorizer, None, None
+    )
+
+    async def dispatch(action, gateway, names):
+        return await deadlines.handle(action, gateway, names)
+
+    service.command_executor = BusinessCommands(
+        SimpleNamespace(
+            readonly=readonly,
+            authorizer=authorizer,
+            guard=service.guard,
+            execute=dispatch,
+        )
+    )
+    try:
+        result = await execute_commands(
+            turn,
+            [
+                '/ddl add-strict "报告" [2099-01-01 12:00] -30min',
+                '/ddl add-strict "材料" [2099-01-02 18:00] -30min',
+            ],
+        )
+        assert [r["status"] for r in result] == ["completed", "completed"], result
+        tasks = data.list(turn.ctx.scope, time.time())
+        assert len(tasks) == 2
+        assert all(t["creator"] == "1" and t["targets"] == ["1"] for t in tasks)
+        result = await execute_commands(turn, [f"/ddl remove {tasks[0]['id']}"])
+        assert result[0]["status"] == "completed"
+        assert len(data.list(turn.ctx.scope, time.time())) == 1
+        extractor.extract.assert_not_awaited()
+    finally:
+        data.close()
+
+
+@pytest.mark.asyncio
+async def test_personal_discuss_key_scope_own_conversations_and_shared_budget(service):
+    from src.application.group_discuss.personal import PersonalDiscussService
+
+    g = Gateway()
+    group_scope = await enable(service, g)
+    personal = PersonalDiscussService(service)
+    private_scope = scope_key(ctx("2"))
+    assert private_scope != group_scope
+    assert scope_key(ctx("3")) != private_scope
+    assert json.loads(private_scope) == ["qq", "9", "CHAT", "2"]
+    await personal.manage_personal(ctx(), g, "enable 2")
+    # Explicit global closure still applies; no group key fallback.
+    await personal.manage_personal(ctx(), g, "switch false")
+    with pytest.raises(BusinessError, match="总开关"):
+        await personal.user_command(ctx("2"), g, "apikey = sk-private-user2-abcdef")
+    await personal.manage_personal(ctx(), g, "switch true")
+    await personal.handle(ctx("2", text="/discuss hello", message="private-no-key"), g)
+    assert "/discuss apikey" in g.sent[-1]["text"]
+    assert not service.store.sessions(private_scope)
+    await personal.user_command(ctx("2"), g, "apikey = sk-private-user2-abcdef")
+    assert service.store.secret(group_scope) == "sk-example-123456789"
+    assert service.store.secret(private_scope) == "sk-private-user2-abcdef"
+    shown = await personal.user_command(ctx("2"), g, "apikey show")
+    assert shown == "个人 DeepSeek API Key：sk-pr*****ef"
+    assert personal.guard.secrets.contains("sk-private-user2-abcdef")
+    assert "sk-private-user2-abcdef" not in str(g.sent)
+    calls = []
+
+    async def handler(request):
+        calls.append(json.loads(request.content))
+        assert request.headers["authorization"] == "Bearer sk-private-user2-abcdef"
+        assert "apikey" not in json.dumps(calls[-1]["input"])
+        return httpx.Response(200, json=response(answer("个人回答")))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await personal.handle(ctx("2", text="/discuss first", message="p1"), g)
+    session = service.store.sessions(private_scope)[0]["id"]
+    quoted = str(100 + len(g.sent))
+    await personal.handle(ctx("2", text="/discuss second", message="p2"), g)
+    assert len(service.store.sessions(private_scope)) == 1
+    assert (
+        service.store.db.execute(
+            "SELECT COUNT(*) FROM turns WHERE session=?", (session,)
+        ).fetchone()[0]
+        == 2
+    )
+    assert "first" in json.dumps(calls[-1]["input"])
+    assert not personal.candidate(
+        ctx("3", text="steal", segments=[{"type": "reply", "data": {"id": quoted}}])
+    )
+    await personal.handle(
+        ctx(
+            "2",
+            text="quoted followup",
+            message="p3",
+            segments=[{"type": "reply", "data": {"id": quoted}}],
+        ),
+        g,
+    )
+    assert len(calls) == 3
+    # Both entry points use the same bot daily ledger and scheduler state.
+    budget = service.store.budget(
+        group_scope, service.config(group_scope), service.policy
+    )
+    assert budget["bot_daily"]["charged_or_reserved"] == 360
+    assert personal.running is service.running
+    personal.global_waiting += 1
+    assert service.global_waiting == 1
+    personal.global_waiting -= 1
+    await personal.handle(ctx("2", text="/discuss new fresh", message="p4"), g)
+    assert service.store.session(private_scope, session)["ended"] is not None
+    assert len(service.store.sessions(private_scope)) == 1
+    assert "first" not in json.dumps(calls[-1]["input"])
+    await personal.manage_personal(ctx(), g, "disable 2")
+    assert not service.store.sessions(private_scope)
+    await personal.handle(ctx("2", text="/discuss blocked", message="p5"), g)
+    assert len(calls) == 4
+    assert "尚未" in g.sent[-1]["text"]
+    # Disabled users may still inspect/clear their own credential.
+    await personal.user_command(ctx("2"), g, "apikey clear")
+    assert not service.store.secret(private_scope)
+    assert service.store.secret(group_scope)
+
+
+@pytest.mark.asyncio
+async def test_personal_super_config_gates_persistence_and_help_cards(
+    service, monkeypatch
+):
+    from src.application.group_discuss.personal import PersonalDiscussService
+
+    personal = PersonalDiscussService(service)
+    g = Gateway()
+    scope = scope_key(ctx("2"))
+    with pytest.raises(BusinessError, match="Super"):
+        await personal.manage_personal(ctx("2"), g, "enable 3")
+    await personal.manage_personal(ctx(), g, "switch true")
+    assert PersonalDiscussService(service).enabled
+    await personal.manage_personal(ctx(), g, "enable 2")
+    await personal.manage_personal(ctx(), g, "config set 2 daily_token_budget 123456")
+    await personal.manage_personal(
+        ctx(), g, "config set 2 tools.execute_commands.enabled true"
+    )
+    assert personal.config(scope)["daily_token_budget"] == 123456
+    assert personal.config(scope)["tools.execute_commands.enabled"]
+    for text in [
+        "config set 2 daily_token_budget 999999999",
+        "config set 2 user_mode all",
+        "config set 2 tools.query_group_data.enabled true",
+        "config set 2 max_sessions 5",
+        "config set 2 api_key sk-other-user-key",
+    ]:
+        with pytest.raises(BusinessError):
+            await personal.manage_personal(ctx(), g, text)
+    await personal.manage_personal(ctx(), g, "config reset 2 daily_token_budget")
+    assert (
+        personal.config(scope)["daily_token_budget"]
+        == service.policy["defaults"]["daily_token_budget"]
+    )
+    # Group policy replacement is immediately observed by the personal entry.
+    await personal.manage_personal(
+        ctx(), g, "limits set tool_enabled.execute_commands false"
+    )
+    assert not personal.config(scope)["tools.execute_commands.enabled"]
+    assert not service.policy["tool_enabled"]["execute_commands"]
+    with pytest.raises(BusinessError):
+        await personal.manage_personal(
+            ctx(), g, "config set 2 tools.execute_commands.enabled true"
+        )
+    await personal.user_command(ctx("2"), g, "apikey = sk-private-example-abcdef")
+    captured = []
+
+    def renderer(user, shown, stored, policy):
+        assert shown["api_key"] == "sk-pr*****ef"
+        assert "user_mode" not in shown
+        assert "tools.query_group_data.enabled" not in shown
+        assert "sk-private-example-abcdef" not in str([shown, stored, policy])
+        captured.append(user)
+        return b"\xff\xd8\xffexample"
+
+    monkeypatch.setattr(
+        "src.application.group_discuss.personal.render_personal_configuration", renderer
+    )
+    await personal.manage_personal(ctx(), g, "config show 2")
+    await personal.user_command(ctx("2"), g, "status")
+    assert captured == ["2", "2"]
+    assert g.sent[-1]["user"] == "2"
+    await personal.manage_personal(ctx(), g, "config reset 2 api_key")
+    assert not service.store.secret(scope)
+    assert "2：开启" in await personal.manage_personal(ctx(), g, "users")
+    # Super defaults open, but cannot bypass an explicit user disable.
+    await personal.require_user(ctx(), g, scope_key(ctx()))
+    await personal.manage_personal(ctx(), g, "disable 1")
+    with pytest.raises(BusinessError):
+        await personal.require_user(ctx(), g, scope_key(ctx()))
+    await personal.manage_personal(ctx(), g, "switch false")
+    assert not PersonalDiscussService(service).enabled
+    service.system_config["discuss"] = {"enabled": True}
+    await personal.manage_personal(ctx(), g, "switch reset")
+    assert personal.enabled
+    assert not personal.switch_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_personal_business_commands_each_turn_as_private_actor(service):
+    from unittest.mock import AsyncMock
+
+    from src.application.authorization import Authorizer
+    from src.application.group_discuss.commands import (
+        BusinessCommands,
+        execute_commands,
+    )
+    from src.application.group_discuss.harness import Turn, run_turn
+    from src.application.group_discuss.personal import PersonalDiscussService
+
+    g = Gateway()
+    personal = PersonalDiscussService(service)
+    await personal.manage_personal(ctx(), g, "switch true")
+    await personal.manage_personal(ctx(), g, "enable 2")
+    await personal.user_command(ctx("2"), g, "apikey = sk-user2-private-abcdef")
+    await personal.manage_personal(
+        ctx(), g, "config set 2 tools.execute_commands.enabled true"
+    )
+    scope = scope_key(ctx("2"))
+    session = service.store.create_session(scope, "2", 1)
+    identifier = service.store.new_turn(session, "2")
+    turn = Turn(personal, ctx("2"), g, scope, session, identifier)
+    actions = []
+
+    async def dispatch(action, gateway, names):
+        assert action.context.actor == "2" and action.context.group == ""
+        assert action.context.scope == ("qq", "9", "CHAT", "2")
+        actions.append(action)
+        return "OK"
+
+    dispatcher = SimpleNamespace(
+        readonly=SimpleNamespace(readonly_groups=set()),
+        authorizer=Authorizer(service.roles),
+        guard=service.guard,
+        execute=dispatch,
+    )
+    service.command_executor = BusinessCommands(dispatcher)
+    result = await execute_commands(
+        turn, ['/ddl add-strict "test" [2099-01-01 12:00] -30min', "/version"]
+    )
+    assert [r["status"] for r in result] == ["rejected", "completed"]
+    # Both direct executor and tool schema permit subsequent private turns.
+    assert (await execute_commands(turn, ["/version"]))[0]["reused"]
+    service.store.finish_turn(identifier, "failed")
+    turn.id = service.store.new_turn(session, "2")
+    result = await execute_commands(turn, ["/version"])
+    assert result[0]["status"] == "completed" and not result[0].get("reused")
+    assert len(actions) == 2
+
+    async def handler(request):
+        payload = json.loads(request.content)
+        assert any(t.get("name") == "execute_commands" for t in payload["tools"])
+        assert not any(t.get("name") == "query_group_data" for t in payload["tools"])
+        assert request.headers["authorization"] == "Bearer sk-user2-private-abcdef"
+        return httpx.Response(200, json=response(answer("你好")))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await run_turn(turn, "你好")
+    assert "不可用" in await turn.tool("query_group_data")
+
+    # Toggling access during a batch blocks the remainder without losing prior results.
+    async def close_user(turn, command):
+        service.store.save_group(scope, "1", enabled=False)
+        return "done"
+
+    service.command_executor = SimpleNamespace(
+        execute=AsyncMock(side_effect=close_user)
+    )
+    result = await execute_commands(turn, ["/help", "/role"])
+    assert [r["status"] for r in result] == ["completed", "blocked"]
+
+
+@pytest.mark.asyncio
+async def test_super_personal_default_open_without_operator_key_fallback(service):
+    from src.application.group_discuss.harness import Turn, run_turn
+    from src.application.group_discuss.personal import PersonalDiscussService
+
+    g = Gateway()
+    personal = PersonalDiscussService(service)
+    scope = scope_key(ctx())
+    assert personal.enabled
+    await personal.require_user(ctx(), g, scope)
+    with pytest.raises(BusinessError):
+        await personal.require_user(ctx("2"), g, scope_key(ctx("2")))
+    # Setting own overrides preserves the implicit Super default.
+    await personal.manage_personal(ctx(), g, "config set 1 reasoning_effort medium")
+    assert personal.access_enabled(scope)
+    service.system_config["api_key"] = "sk-global-never-use-this"
+    with pytest.raises(BusinessError, match="apikey"):
+        personal.ready(scope, personal.config(scope))
+    await personal.user_command(ctx(), g, "apikey = sk-super-personal-abcdef")
+    session = service.store.create_session(scope, "1", 1)
+    turn = Turn(
+        personal, ctx(), g, scope, session, service.store.new_turn(session, "1")
+    )
+
+    async def handler(request):
+        assert request.headers["authorization"] == "Bearer sk-super-personal-abcdef"
+        return httpx.Response(200, json=response(answer("OK")))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await run_turn(turn, "hello")
+    await personal.manage_personal(ctx(), g, "disable 1")
+    with pytest.raises(BusinessError):
+        await personal.require_user(ctx(), g, scope)
+    await personal.manage_personal(ctx(), g, "enable 1")
+    await personal.manage_personal(ctx(), g, "switch false")
+    with pytest.raises(BusinessError, match="总开关"):
+        await personal.require_user(ctx(), g, scope)

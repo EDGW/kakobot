@@ -14,6 +14,8 @@
 | 用量和费用 | [cost](cost.md) |
 | 更新及自定义广播 | [announce](announce.md) |
 | 只读群管理 | [readonly](readonly.md) |
+| 个人 AI 用户与工具管理 | [discuss](../discuss/super.md) |
+| 群 AI 对话全局管理 | [group-discuss](../group-discuss/super.md) |
 
 ## 通用约定
 

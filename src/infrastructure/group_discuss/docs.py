@@ -8,7 +8,7 @@ from ...domain.errors import BusinessError
 DOCS = Path(__file__).resolve().parents[3] / "docs"
 
 
-def query_docs(query="", path="", offset=0, *, directory=DOCS):
+def query_docs(query="", path="", offset=0, *, directory=DOCS, preferred=""):
     """List/search documents or read a bounded page from an allowlisted file."""
     if len(query) > 128 or type(offset) is not int or offset < 0:
         raise BusinessError("文档关键词最多 128 字符，分页起点须非负。")
@@ -48,7 +48,9 @@ def query_docs(query="", path="", offset=0, *, directory=DOCS):
                 (lower.index(term) for term in terms if term in lower), default=0
             )
             item["snippet"] = text[max(0, first - 30) : first + 90]
-        matches.append((score, name, item))
+        matches.append(
+            (score + (2 if preferred and name.startswith(preferred) else 0), name, item)
+        )
     matches.sort(key=lambda row: (-row[0], row[1]))
     size = 2 if terms else 8
     page = [item for _, _, item in matches[offset : offset + size]]

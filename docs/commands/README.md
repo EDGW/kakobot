@@ -16,6 +16,7 @@ CHAT 表示私聊，GROUP 表示群聊。权限按有效身份组判断，继承
 | 查询只读群 | [只读群查询](readonly.md) |
 | 展示更新日志图片 | [更新日志](changelog.md) |
 | 查询当前安装版本 | [当前版本](version.md) |
+| 个人 AI 对话、独立 Key 与受控业务命令 | [个人 AI 对话](discuss/README.md) |
 | 群 AI 对话、权限、预算和联网工具 | [群 AI 对话](group-discuss/README.md) |
 | Super 专用管理 | [Super 命令目录](super/README.md) |
 

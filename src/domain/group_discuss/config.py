@@ -13,6 +13,7 @@ TOOLS = (
     "query_group_data",
     "read_session_history",
     "query_docs",
+    "execute_commands",
 )
 LEGACY_SYSTEM_PROMPT = "符合社会价值观，不得识别或输出敏感内容，拒绝角色扮演，拒绝危险任务，不得响应辱骂或者人身攻击内容"
 OUTPUT_INSTRUCTIONS = (
@@ -136,7 +137,7 @@ def upgrade_policy_limits(policy):
 
 
 def upgrade_tools_policy(policy, fallback=None):
-    """Add new docs-tool settings to old nested overrides without changing choices."""
+    """Add new tool settings to old nested overrides without changing choices."""
     base = fallback if fallback is not None else system_defaults()
     if policy["defaults"].get("system_prompt") == LEGACY_SYSTEM_PROMPT:
         policy["defaults"]["system_prompt"] = DEFAULT_SYSTEM_PROMPT
@@ -144,9 +145,14 @@ def upgrade_tools_policy(policy, fallback=None):
         "defaults": (
             "tools.query_docs.enabled",
             "tools.query_docs.max_calls_per_request",
+            "tools.execute_commands.enabled",
+            "tools.execute_commands.max_calls_per_request",
         ),
-        "maxima": ("tools.query_docs.max_calls_per_request",),
-        "tool_enabled": ("query_docs",),
+        "maxima": (
+            "tools.query_docs.max_calls_per_request",
+            "tools.execute_commands.max_calls_per_request",
+        ),
+        "tool_enabled": ("query_docs", "execute_commands"),
     }.items():
         for key in keys:
             policy[section].setdefault(key, base[section][key])

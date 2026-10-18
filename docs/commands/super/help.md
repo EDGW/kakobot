@@ -34,7 +34,7 @@
 
 ### `/super help` - CHAT
 
-**完整格式**：`/super help [help|role|ddl|schedule|request|cost|announce|readonly|group-discuss]`
+**完整格式**：`/super help [help|role|ddl|schedule|request|cost|announce|readonly|discuss|group-discuss]`
 
 **所需权限组**：`super`
 
@@ -50,6 +50,7 @@
 | cost | `/super help cost` | 用量与费用 |
 | announce | `/super help announce` | 更新及自定义广播 |
 | readonly | `/super help readonly` | 查询和修改只读群 |
+| discuss | `/super help discuss` | 个人用户启停、工具、预算与会话管理（仅私聊操作） |
 | group-discuss | `/super help group-discuss` | 群 AI 对话启停、接管、角色与全局约束 |
 
 功能组名与 Super 命令文档文件名一致；group-discuss 对应群 AI 全局管理页。不含扩展名，可带一个开头斜线，大小写不敏感。只接受一个功能组，不再支持 `/super help ddl edit` 这样的子命令筛选；编辑参数请看 `/super help ddl`。
@@ -66,7 +67,7 @@
 
 ### `/super help` - GROUP
 
-**完整格式**：`/super help [help|role|ddl|schedule|request|cost|announce|readonly|group-discuss]`
+**完整格式**：`/super help [help|role|ddl|schedule|request|cost|announce|readonly|discuss|group-discuss]`
 
 **所需权限组**：`super`
 
@@ -82,6 +83,7 @@
 | cost | `/super help cost` | 用量与费用 |
 | announce | `/super help announce` | 更新及自定义广播 |
 | readonly | `/super help readonly` | 查询和修改只读群 |
+| discuss | `/super help discuss` | 个人用户启停、工具、预算与会话管理（仅私聊操作） |
 | group-discuss | `/super help group-discuss` | 群 AI 对话启停、接管、角色与全局约束 |
 
 功能组名与 Super 命令文档文件名一致；group-discuss 对应群 AI 全局管理页。不含扩展名，可带一个开头斜线，大小写不敏感。只接受一个功能组，不再支持 `/super help ddl edit` 这样的子命令筛选；编辑参数请看 `/super help ddl`。

@@ -171,6 +171,16 @@
             "description": "项目文档每请求查询次数",
             "type": "int",
             "default": 9
+          },
+          "tools.execute_commands.enabled": {
+            "description": "允许 AI 在新会话首轮以发起人身份执行 KakoBot 业务命令（默认关闭）",
+            "type": "bool",
+            "default": false
+          },
+          "tools.execute_commands.max_calls_per_request": {
+            "description": "每请求业务命令工具批次数，整个首轮另限 5 条不同命令",
+            "type": "int",
+            "default": 9
           }
         }
       },
@@ -242,6 +252,11 @@
             "description": "项目文档查询次数全局上限",
             "type": "int",
             "default": 24
+          },
+          "tools.execute_commands.max_calls_per_request": {
+            "description": "业务命令工具每请求批次数上限",
+            "type": "int",
+            "default": 24
           }
         }
       },
@@ -271,6 +286,11 @@
           },
           "query_docs": {
             "description": "允许只读查询随插件提供的 docs 文档",
+            "type": "bool",
+            "default": true
+          },
+          "execute_commands": {
+            "description": "允许各群启用首轮 KakoBot 业务命令工具，无系统命令能力",
             "type": "bool",
             "default": true
           }
@@ -386,5 +406,16 @@
       }
     },
     "hint": "模型及联网由本群 Key 付费。系统允许工具，群默认仅开启项目文档查询，其他工具默认关闭。"
+  },
+  "discuss": {
+    "description": "个人 AI 对话（用户自备 DeepSeek Key；其余限制复用 group_discuss 通用配置）",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "个人 /discuss 总开关；Super 默认开放，其他用户须单独开启",
+        "type": "bool",
+        "default": true
+      }
+    }
   }
 }

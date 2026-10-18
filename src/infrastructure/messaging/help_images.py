@@ -15,6 +15,11 @@ DISCUSS_TOPICS = {
     "group-discuss-statistics": "statistics",
     "group-discuss-configuration": "configuration",
 }
+PERSONAL_TOPICS = {
+    "discuss": "help",
+    "discuss-tools": "tools",
+    "discuss-configuration": "configuration",
+}
 
 
 class HelpImageStore:
@@ -33,7 +38,13 @@ class HelpImageStore:
         sources = self.directory.parent.parent / "commands"
         if super_help:
             sources /= "super"
-        if (not super_help and topic in DISCUSS_TOPICS) or (
+        if (not super_help and topic in PERSONAL_TOPICS) or (
+            super_help and topic == "discuss"
+        ):
+            topic = "super" if super_help else PERSONAL_TOPICS[topic]
+            directory = self.directory / "discuss"
+            sources = self.directory.parent.parent / "commands/discuss"
+        elif (not super_help and topic in DISCUSS_TOPICS) or (
             super_help and topic == "group-discuss"
         ):
             topic = "super" if super_help else DISCUSS_TOPICS[topic]

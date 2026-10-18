@@ -13,7 +13,10 @@ def documentation_files(directory, output):
         if not path.is_relative_to(output)
         and (
             path.stem.lower() not in EXCLUDED_STEMS
-            or (path.parent.name == "group-discuss" and path.stem == "configuration")
+            or (
+                path.parent.name in {"group-discuss", "discuss"}
+                and path.stem == "configuration"
+            )
         )
     ]
 

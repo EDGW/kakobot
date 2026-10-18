@@ -37,6 +37,7 @@ SECTIONS = [
                 ("query_group_data", "群 DDL 查询"),
                 ("read_session_history", "会话历史"),
                 ("query_docs", "项目文档查询"),
+                ("execute_commands", "首轮业务命令"),
             )
             for suffix in ("enabled", "max_calls_per_request")
         },
@@ -106,5 +107,36 @@ def render_configuration(group, shown, stored, policy):
         footer=(
             "模型及联网费用由本群 Key 承担；数值与工具权限受全局约束。",
             "/group-discuss admin config show " + str(group) + " [KEY]",
+        ),
+    )
+
+
+def render_personal_configuration(user, shown, stored, policy):
+    sections = configuration_sections(shown, stored, policy)
+    replacements = {
+        "群 AI 功能": "用户开放开关",
+        "群每日 token 预算": "个人每日 token 预算",
+        "首轮业务命令": "每轮业务命令",
+        "群系统提示词": "个人系统提示词",
+        "群内设置": "Super 用户配置",
+        "群独立密钥": "个人独立密钥",
+    }
+
+    def personal(text):
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        return text
+
+    return render_value_cards(
+        "个人 AI 配置",
+        f"用户 {user} · 私聊 · 当前生效值",
+        [
+            (personal(title), [tuple(personal(v) for v in row) for row in rows])
+            for title, rows in sections
+        ],
+        banner="KAKOBOT / DISCUSS",
+        footer=(
+            "模型及联网费用由个人 Key 承担；权限与额度由 Super 管理。",
+            "私聊业务命令每轮可用；每轮最多 5 条不同命令。",
         ),
     )

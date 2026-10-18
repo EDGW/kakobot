@@ -16,7 +16,10 @@ from ...domain.group_discuss.moderation import WARNING_TTL
 
 def scope_key(ctx, group=None):
     return json.dumps(
-        [ctx.platform, ctx.bot, group or ctx.group], separators=(",", ":")
+        [ctx.platform, ctx.bot, group or ctx.group]
+        if group or ctx.group
+        else [ctx.platform, ctx.bot, "CHAT", ctx.actor],
+        separators=(",", ":"),
     )
 
 
@@ -79,9 +82,20 @@ class DiscussStore:
                     CREATE TABLE IF NOT EXISTS audit (
                         id INTEGER PRIMARY KEY, scope TEXT NOT NULL, actor TEXT NOT NULL,
                         action TEXT NOT NULL, detail TEXT NOT NULL, created REAL NOT NULL);
+                    CREATE TABLE IF NOT EXISTS command_runs (
+                        session TEXT NOT NULL, fingerprint TEXT NOT NULL,
+                        turn TEXT NOT NULL DEFAULT '',
+                        state TEXT NOT NULL DEFAULT 'pending', result BLOB,
+                        PRIMARY KEY(session,fingerprint));
                     CREATE TABLE IF NOT EXISTS secrets (
                         scope TEXT PRIMARY KEY, value BLOB NOT NULL);
                 """)
+                if "turn" not in {
+                    r[1] for r in self.db.execute("PRAGMA table_info(command_runs)")
+                }:
+                    self.db.execute(
+                        "ALTER TABLE command_runs ADD COLUMN turn TEXT NOT NULL DEFAULT ''"
+                    )
                 if self.db.execute("PRAGMA user_version").fetchone()[0] < 2:
                     for row in self.db.execute(
                         "SELECT scope,config FROM groups"
@@ -377,6 +391,73 @@ class DiscussStore:
             )
         return identifier
 
+    def command_actor(self, scope, session, turn):
+        """Private turns allow commands throughout; group turns only on the first."""
+        saved = self.session(scope, session)
+        current = self.db.execute(
+            "SELECT * FROM turns WHERE session=? AND id=?", (session, turn)
+        ).fetchone()
+        private = len(json.loads(scope)) == 4 and json.loads(scope)[2] == "CHAT"
+        first = self.db.execute(
+            "SELECT id FROM turns WHERE session=? ORDER BY rowid LIMIT 1", (session,)
+        ).fetchone()
+        if (
+            saved["ended"] is not None
+            or current is None
+            or (not private and first["id"] != turn)
+            or current["actor"] != saved["actor"]
+            or current["state"] != "pending"
+        ):
+            raise BusinessError(
+                "业务命令须由会话发起人在当前有效轮次执行，群聊仅限新会话首轮。"
+            )
+        return saved["actor"]
+
+    def claim_command(self, scope, session, turn, fingerprint):
+        with self.db:
+            actor = self.command_actor(scope, session, turn)
+            row = self.db.execute(
+                "SELECT * FROM command_runs WHERE session=? AND fingerprint=?",
+                (session, fingerprint),
+            ).fetchone()
+            if row:
+                if row["state"] == "pending":
+                    raise BusinessError(
+                        "此命令执行结果未确认，禁止自动重复执行，请人工核实。"
+                    )
+                return json.loads(self.cipher.decrypt(row["result"]))
+            count = self.db.execute(
+                "SELECT COUNT(*) FROM command_runs WHERE session=? AND (?=0 OR turn=?)",
+                (session, int(len(json.loads(scope)) == 4), turn),
+            ).fetchone()[0]
+            if count >= 5:
+                raise BusinessError(
+                    "群聊首轮或私聊本轮最多执行 5 条不同业务命令（失败也计入）。"
+                )
+            self.db.execute(
+                "INSERT INTO command_runs(session,fingerprint,turn) VALUES (?,?,?)",
+                (session, fingerprint, turn),
+            )
+            self.log(scope, actor, "command pending", f"{session}:{fingerprint}")
+        return None
+
+    def finish_command(self, scope, session, actor, fingerprint, result):
+        with self.db:
+            self.db.execute(
+                "UPDATE command_runs SET state=?,result=? WHERE session=? AND fingerprint=?",
+                (
+                    result["status"],
+                    self.cipher.encrypt(
+                        json.dumps(result, ensure_ascii=False).encode()
+                    ),
+                    session,
+                    fingerprint,
+                ),
+            )
+            self.log(
+                scope, actor, "command " + result["status"], f"{session}:{fingerprint}"
+            )
+
     def total(self, where, args):
         return self.db.execute(
             "SELECT COALESCE(SUM(charged),0) FROM calls WHERE " + where, args
@@ -555,7 +636,17 @@ class DiscussStore:
         if any(name.startswith("native_") for name in names):
             sources.append("内置（DeepSeek Responses）")
         if names & {"search_web", "fetch_webpage"}:
-            sources.append("外置（DeepSeek Search/Fetch，同群 Key）")
+            scope = json.loads(
+                self.db.execute(
+                    "SELECT scope FROM sessions WHERE id=(SELECT session FROM turns WHERE id=?)",
+                    (turn,),
+                ).fetchone()[0]
+            )
+            sources.append(
+                "外置（DeepSeek Search/Fetch，"
+                + ("个人 Key" if len(scope) == 4 else "同群 Key")
+                + "）"
+            )
         result["search_source"] = "、".join(sources) or "未使用"
         return result
 
@@ -624,6 +715,10 @@ class DiscussStore:
     def cleanup(self, days):
         cutoff = time.time() - days * 86400
         with self.db:
+            self.db.execute(
+                "DELETE FROM command_runs WHERE session IN (SELECT id FROM sessions WHERE ended IS NOT NULL AND ended<?)",
+                (cutoff,),
+            )
             self.db.execute(
                 "UPDATE sessions SET history=NULL,summary='' WHERE ended IS NOT NULL AND ended<?",
                 (cutoff,),

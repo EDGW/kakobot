@@ -28,6 +28,9 @@
 | readonly | `/help readonly` | 查询只读群 |
 | changelog | `/help changelog` | 查看更新日志命令的说明；`/changelog` 展示日志正文图片 |
 | version | `/help version` | 查看版本查询命令的说明；`/version` 返回当前版本号 |
+| discuss | `/help discuss` | 私聊 AI、个人 Key 和个人会话 |
+| discuss-tools | `/help discuss-tools` | 个人工具与每轮业务命令 |
+| discuss-configuration | `/help discuss-configuration` | 个人配置、预算与共同约束 |
 | group-discuss | `/help group-discuss` | 群 AI 对话、专题帮助和自己的会话 |
 | group-discuss-admin | `/help group-discuss-admin` | 群 admin 与群 super 共用管理帮助 |
 | group-discuss-roles | `/help group-discuss-roles` | discuss 身份与用户准入 |
@@ -35,7 +38,7 @@
 | group-discuss-configuration | `/help group-discuss-configuration` | 群配置、默认值和系统约束 |
 | group-discuss-statistics | `/help group-discuss-statistics` | 预算、用量与统计 |
 
-功能组名与普通命令文档文件名一致，不含扩展名；group-discuss 子目录使用上表的专题名，group-discuss-super 是 group-discuss-admin 的别名。不支持继续追加子命令：`/help ddl add-strict` 不再有效，创建语法请看 `/help ddl`。功能组名可带一个开头斜线，大小写不敏感。
+功能组名与普通命令文档文件名一致，不含扩展名；discuss 与 group-discuss 子目录使用上表的专题名，group-discuss-super 是 group-discuss-admin 的别名。不支持继续追加子命令：`/help ddl add-strict` 不再有效，创建语法请看 `/help ddl`。功能组名可带一个开头斜线，大小写不敏感。
 
 文档按 CHAT/GROUP 区分，不按个人身份组动态删减内容；每个入口在图片中写明所需权限，能查看文档不代表拥有执行权限。未开放当前会话的功能页会显示不可用说明，例如群内查询 autoanalysis。Super 文档须通过 `/super help 功能组` 查询。
 
@@ -67,6 +70,9 @@
 | readonly | `/help readonly` | 查询只读群 |
 | changelog | `/help changelog` | 查看更新日志命令的说明；`/changelog` 展示日志正文图片 |
 | version | `/help version` | 查看版本查询命令的说明；`/version` 返回当前版本号 |
+| discuss | `/help discuss` | 私聊 AI、个人 Key 和个人会话 |
+| discuss-tools | `/help discuss-tools` | 个人工具与每轮业务命令 |
+| discuss-configuration | `/help discuss-configuration` | 个人配置、预算与共同约束 |
 | group-discuss | `/help group-discuss` | 群 AI 对话、专题帮助和自己的会话 |
 | group-discuss-admin | `/help group-discuss-admin` | 群 admin 与群 super 共用管理帮助 |
 | group-discuss-roles | `/help group-discuss-roles` | discuss 身份与用户准入 |
@@ -74,7 +80,7 @@
 | group-discuss-configuration | `/help group-discuss-configuration` | 群配置、默认值和系统约束 |
 | group-discuss-statistics | `/help group-discuss-statistics` | 预算、用量与统计 |
 
-功能组名与普通命令文档文件名一致，不含扩展名；group-discuss 子目录使用上表的专题名，group-discuss-super 是 group-discuss-admin 的别名。不支持继续追加子命令：`/help ddl add-strict` 不再有效，创建语法请看 `/help ddl`。功能组名可带一个开头斜线，大小写不敏感。
+功能组名与普通命令文档文件名一致，不含扩展名；discuss 与 group-discuss 子目录使用上表的专题名，group-discuss-super 是 group-discuss-admin 的别名。不支持继续追加子命令：`/help ddl add-strict` 不再有效，创建语法请看 `/help ddl`。功能组名可带一个开头斜线，大小写不敏感。
 
 文档按 CHAT/GROUP 区分，不按个人身份组动态删减内容；每个入口在图片中写明所需权限，能查看文档不代表拥有执行权限。未开放当前会话的功能页会显示不可用说明，例如群内查询 autoanalysis。Super 文档须通过 `/super help 功能组` 查询。
 

@@ -87,3 +87,35 @@ def test_table_commands_render_with_code_highlight():
     visible = "".join(op[2] for op in layout.ops if op[0] == "text")
     assert "`" not in visible
     assert "**" not in visible
+
+
+def test_personal_docs_have_separate_help_images_and_config_page(tmp_path):
+    from pathlib import Path
+
+    from src.infrastructure.messaging.help_images import HelpImageStore
+    from src.tooling.docs_images.document import documentation_files
+
+    root = Path(__file__).resolve().parents[1]
+    files = documentation_files(root / "docs", root / "docs/pics")
+    assert root / "docs/commands/discuss/configuration.md" in files
+    assert root / "docs/commands/group-discuss/configuration.md" in files
+    for topic, page, super_help in [
+        ("discuss", "help", False),
+        ("discuss-tools", "tools", False),
+        ("discuss-configuration", "configuration", False),
+        ("discuss", "super", True),
+    ]:
+        path = tmp_path / "discuss" / f"{page}-chat.jpeg"
+        path.parent.mkdir(exist_ok=True)
+        data = b"\xff\xd8\xff" + page.encode()
+        path.write_bytes(data)
+        assert (
+            HelpImageStore(tmp_path).read(topic, "CHAT", super_help=super_help) == data
+        )
+    config = parse_document(
+        (root / "docs/commands/discuss/configuration.md").read_text()
+    )
+    beginner = next(
+        lines for title, lines in cards_for(config, "CHAT") if title == "新手常用设置"
+    )
+    assert sum(kind == "heading" for kind, _ in blocks(beginner)) == 4

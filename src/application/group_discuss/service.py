@@ -36,6 +36,7 @@ class DiscussService:
         self.store = DiscussStore(directory)
         self.system_config, self.roles, self.guard = config, roles, guard
         self.http, self.deadlines = http, deadlines
+        self.command_executor = None
         self.images = HelpImageStore()
         self._migrate_roles()
         self.roles.discuss_policy = lambda scope, user: (
@@ -160,6 +161,9 @@ class DiscussService:
 
     def config(self, scope):
         return effective(self.store.group(scope)["config"], self.policy)
+
+    def access_enabled(self, scope):
+        return self.store.group(scope)["enabled"]
 
     def auto_moderation_allowed(self, ctx, scope):
         if (
@@ -299,13 +303,13 @@ class DiscussService:
         ):
             self.store.map_message(scope_key(ctx), result["message_id"], session)
 
-    async def chat(self, ctx, gateway, scope):
+    async def chat(self, ctx, gateway, scope, session=None):
         await self.guard.check(gateway.bot, ctx.group, ctx.bot, "群讨论")
         config = self.config(scope)
         self.ready(scope, config)
         if not ctx.text.strip():
             raise BusinessError("请附上问题文字。")
-        quote, session = "", None
+        quote = ""
         for segment in ctx.segments:
             if segment.get("type") != "reply":
                 continue
@@ -425,7 +429,7 @@ class DiscussService:
         warning = False
         ban = False
         if category:
-            text = f"该请求违反本群规则（{CATEGORIES[category]}），无法继续。"
+            text = f"该请求违反{'本群' if ctx.group else '使用'}规则（{CATEGORIES[category]}），无法继续。"
             if self.auto_moderation_allowed(ctx, scope):
                 if self.store.prior_rule_warning(
                     scope, ctx.actor, category, identifier

@@ -26,6 +26,8 @@ from .deadlines.management import SuperDeadlineService
 from .deadlines.scheduler import DeadlineScheduler
 from .deadlines.service import DeadlineService
 from .dispatcher import Dispatcher
+from .group_discuss.commands import BusinessCommands
+from .group_discuss.personal import PersonalDiscussService
 from .group_discuss.service import DiscussService
 from .management.costs import CostService
 from .management.requests import RequestService
@@ -102,6 +104,8 @@ class Runtime:
             HelpService(HelpImageStore()),
             ReleaseService(ReleaseInfoStore()),
         )
+        self.discuss.command_executor = BusinessCommands(self.dispatcher)
+        self.personal_discuss = PersonalDiscussService(self.discuss)
         self.scheduler = DeadlineScheduler(
             deadlines, resolve_gateway, diagnostic_gateway
         )
@@ -115,6 +119,8 @@ class Runtime:
         task = asyncio.current_task()
         self.active.add(task)
         try:
+            if self.personal_discuss.candidate(ctx):
+                return await self.personal_discuss.handle(ctx, gateway)
             if self.discuss.candidate(ctx) and await self.discuss.handle(ctx, gateway):
                 return True
             if not self.dispatcher.should_handle(ctx):
