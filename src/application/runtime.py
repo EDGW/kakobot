@@ -5,7 +5,6 @@ import time
 
 import httpx
 
-from ..infrastructure.group_discuss.browser_setup import ChromiumSetup
 from ..infrastructure.messaging.help_images import HelpImageStore
 from ..infrastructure.messaging.onebot import OutboundGuard
 from ..infrastructure.messaging.release_info import ReleaseInfoStore
@@ -106,9 +105,6 @@ class Runtime:
         self.scheduler = DeadlineScheduler(
             deadlines, resolve_gateway, diagnostic_gateway
         )
-        self.browser_setup = ChromiumSetup(
-            lambda exc: self.scheduler.report(None, "group-discuss-browser-setup", exc)
-        )
         self.active = set()
         self.closing = False
 
@@ -144,7 +140,6 @@ class Runtime:
 
     async def close(self):
         self.closing = True
-        await self.browser_setup.stop()
         await self.scheduler.stop()
         await self.upgrade_announcements.stop()
         for task in self.active:

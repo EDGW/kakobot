@@ -48,10 +48,10 @@ Super 使用 `/super help` 管理身份组、各用户和各群的 DDL、好友�
 
 ## 群讨论 Markdown 卡片依赖
 
-群 discuss 超过 1000 字符、包含公式或表格时自动生成紧凑图片，AI 也可主动选择卡片。渲染使用 Markdown-it、KaTeX 和本地 Playwright Chromium，不调用 AI，不加载远程资源。KakoBot 启动时会在后台试启动 Chromium，缺失时自动使用 AstrBot 当前 Python 和运行用户执行固定的浏览器安装命令（最多 300 秒）。每次启动只尝试一次；无需阻塞机器人启动，失败会通知 Super 并保持文字回退。也可以手动执行：
+群 discuss 超过 1000 字符、包含公式或表格时自动生成紧凑图片，AI 也可主动选择卡片。渲染使用 Markdown-it、KaTeX 和本地 Playwright Chromium，不调用 AI，不加载远程资源。Chromium 需由管理员在 AstrBot 使用的同一 Python 环境、以同一运行用户手动安装：
 
 ```sh
 python -m playwright install chromium
 ```
 
-Linux 容器若缺少浏览器系统依赖，可在构建镜像时执行 `python -m playwright install --with-deps chromium`。浏览器应安装在运行 AstrBot 的同一用户缓存目录，或配置相同的 PLAYWRIGHT_BROWSERS_PATH。插件不会在对话中执行安装，也不自动安装系统库、不提权。AI 没有安装或系统命令工具；安装未完成或渲染失败时退回文字，回答和用量不会丢失。卡片中的 HTTP(S) 链接会去重后另外发送合并聊天记录，便于点击。
+Linux 容器若缺少浏览器系统依赖，可在构建镜像时执行 `python -m playwright install --with-deps chromium`。浏览器应安装在运行 AstrBot 的同一用户缓存目录，或配置相同的 PLAYWRIGHT_BROWSERS_PATH。插件不会自动下载、安装或更新 Chromium，也不自动安装系统库、不提权。AI 没有安装或系统命令工具；安装未完成或渲染失败时退回文字，回答和用量不会丢失。卡片中的 HTTP(S) 链接会去重后另外发送合并聊天记录，便于点击。
