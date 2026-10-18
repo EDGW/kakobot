@@ -821,9 +821,16 @@ async def test_help_cards_and_aliases(service, tmp_path):
 
 @pytest.mark.parametrize(
     "previous_version",
-    ["2.0.0-alpha.1", "2.0.0-alpha.2", "2.0.0-alpha.3", "2.0.0-beta.1"],
+    [
+        "2.0.0-alpha.1",
+        "2.0.0-alpha.2",
+        "2.0.0-alpha.3",
+        "2.0.0-beta.1",
+        "2.0.0-beta.1.1",
+        "2.0.0-beta.1.2",
+    ],
 )
-def test_alpha_upgrade_preserves_state_and_queues_announcement(
+def test_prerelease_upgrade_preserves_state_and_queues_announcement(
     tmp_path, previous_version
 ):
     from src.infrastructure.storage.broadcasts.conversations import ConversationStore
@@ -1442,3 +1449,23 @@ async def test_card_answer_reply_mapping_and_renderer_fallback(service, monkeypa
     assert "tokens input:" in g.sent[-1]["text"]
     assert len(requests) == 2
     assert service.store.message_session(scope, "103") == session
+
+
+@pytest.mark.parametrize(
+    "previous_version", ["2.0.0-beta.1.4", "2.0.0", "3.0.0", "unknown"]
+)
+def test_migration_rejects_future_and_unknown_versions_without_overwrite(
+    tmp_path, previous_version
+):
+    from src.infrastructure.storage.json_store import read_json
+    from src.infrastructure.storage.migration import migrate
+
+    migrate(tmp_path)
+    marker = {"version": previous_version}
+    atomic_json(tmp_path / "version.json", marker)
+    before = (tmp_path / "roles.json").read_bytes()
+    with pytest.raises(ValueError, match="禁止降级或覆盖"):
+        migrate(tmp_path)
+    assert read_json(tmp_path / "version.json") == marker
+    assert (tmp_path / "roles.json").read_bytes() == before
+    assert not (tmp_path / f"migration-backup-{previous_version}").exists()
