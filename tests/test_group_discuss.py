@@ -46,6 +46,10 @@ class Gateway:
         self.sent.append({"data": data, **kwargs})
         return {"message_id": str(100 + len(self.sent))}
 
+    async def send_link_forward(self, links, **kwargs):
+        self.sent.append({"links": links, **kwargs})
+        return {"message_id": str(100 + len(self.sent))}
+
     async def message(self, identifier):
         return self.quotes[identifier]
 
@@ -828,6 +832,7 @@ async def test_help_cards_and_aliases(service, tmp_path):
         "2.0.0-beta.1",
         "2.0.0-beta.1.1",
         "2.0.0-beta.1.2",
+        "2.0.0-beta.1.3",
     ],
 )
 def test_prerelease_upgrade_preserves_state_and_queues_announcement(
@@ -1452,7 +1457,7 @@ async def test_card_answer_reply_mapping_and_renderer_fallback(service, monkeypa
 
 
 @pytest.mark.parametrize(
-    "previous_version", ["2.0.0-beta.1.4", "2.0.0", "3.0.0", "unknown"]
+    "previous_version", ["2.0.0-beta.1.5", "2.0.0", "3.0.0", "unknown"]
 )
 def test_migration_rejects_future_and_unknown_versions_without_overwrite(
     tmp_path, previous_version
@@ -1469,3 +1474,36 @@ def test_migration_rejects_future_and_unknown_versions_without_overwrite(
     assert read_json(tmp_path / "version.json") == marker
     assert (tmp_path / "roles.json").read_bytes() == before
     assert not (tmp_path / f"migration-backup-{previous_version}").exists()
+
+
+@pytest.mark.asyncio
+async def test_rendered_answer_sends_deduplicated_links_as_forward(
+    service, monkeypatch
+):
+    import src.application.group_discuss.service as module
+
+    g = Gateway()
+    scope = await enable(service, g)
+    text = "[[render:card]]\n[天气](https://example.com/weather)\n重复 https://example.com/weather"
+
+    async def handler(request):
+        assert request.headers["authorization"] == "Bearer sk-example-123456789"
+        return httpx.Response(200, json=response(answer(text)))
+
+    async def render(*args):
+        return [b"card"]
+
+    monkeypatch.setattr(module, "render_markdown_cards", render)
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await service.handle(ctx("2", "10", "天气", "link-card", True), g)
+    assert g.sent[0]["data"] == b"card"
+    assert g.sent[1]["links"] == [("天气", "https://example.com/weather")]
+    session = service.store.message_session(scope, "101")
+    assert session and service.store.message_session(scope, "102") == session
+
+    # No duplicate forward when a normal text answer already has clickable links.
+    text = "[天气](https://example.com/weather)"
+    await service.handle(ctx("2", "10", "天气", "link-text", True), g)
+    assert "text" in g.sent[-1]
+    assert len(g.sent) == 3

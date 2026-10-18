@@ -85,3 +85,50 @@ async def test_actual_browser_renders_math_and_multiple_pages():
         assert image.width == 1120
         assert 0 < image.height <= 1800
         assert image.convert("L").getextrema()[0] < 100
+
+
+def test_answer_links_markdown_references_bare_urls_and_deduplication():
+    from src.presentation.group_discuss.links import answer_links
+
+    source = """[天气](https://weather.example/a?q=1&b=2)
+重复 <https://weather.example/a?q=1&b=2>
+裸链接 https://example.com/a_(b)。
+[参考][ref]
+
+[ref]: https://docs.example/
+
+`https://code.example/`
+
+```text
+https://fence.example/
+```
+[本地](file:///etc/passwd) [脚本](javascript:alert(1))
+"""
+    assert answer_links(source) == [
+        ("天气", "https://weather.example/a?q=1&b=2"),
+        ("https://example.com/a_(b)", "https://example.com/a_(b)"),
+        ("参考", "https://docs.example/"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_onebot_forces_link_forward_even_for_single_url():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from src.infrastructure.messaging.onebot import OneBotGateway
+
+    bot = SimpleNamespace(
+        call_action=AsyncMock(return_value={"message_id": "forward-1"})
+    )
+    gateway = OneBotGateway(bot, "9", "qq")
+    result = await gateway.send_link_forward(
+        [("天气", "https://example.com/")], group="10"
+    )
+    assert result == {"message_id": "forward-1"}
+    assert bot.call_action.call_args.args == ("send_group_forward_msg",)
+    payload = bot.call_action.call_args.kwargs
+    assert payload["group_id"] == 10
+    assert payload["messages"][0]["data"]["content"] == [
+        {"type": "text", "data": {"text": "天气\nhttps://example.com/"}}
+    ]

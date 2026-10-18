@@ -324,6 +324,37 @@ class OneBotGateway:
             -100:
         ]
 
+    async def send_link_forward(self, links, *, group="", user=""):
+        if bool(group) == bool(user):
+            raise ValueError("必须指定且只能指定一个群或私聊目标。")
+        nodes = [
+            {
+                "type": "node",
+                "data": {
+                    "user_id": qq_id(self.self_id),
+                    "nickname": "KakoBot · 回答链接",
+                    "content": [
+                        {
+                            "type": "text",
+                            "data": {
+                                "text": label + "\n" + url if label != url else url
+                            },
+                        }
+                    ],
+                },
+            }
+            for label, url in links
+        ]
+        destination = (
+            {"group_id": int(qq_id(group))} if group else {"user_id": int(qq_id(user))}
+        )
+        return await self.bot.call_action(
+            "send_group_forward_msg" if group else "send_private_forward_msg",
+            **destination,
+            self_id=self.self_id,
+            messages=nodes,
+        )
+
     async def send_image(self, data: bytes, *, group: str = "", user: str = ""):
         if bool(group) == bool(user):
             raise ValueError("必须指定且只能指定一个群或私聊目标。")

@@ -444,3 +444,10 @@ local/discuss-design.md               # 本设计稿
 采用 markdown-it-py + mdit-py-plugins + Pygments 解析常用 Markdown，随包 KaTeX 0.16.22（含 MIT 许可证）排版 LaTeX 数学公式，通过 Playwright Chromium 离线截图。超 1000 字符/公式/表格强制渲染，模型可通过首行 [[render:card]] 主动选用；首行标记由宿主删除。简短普通回答保持文字。紧凑排版，长文分页，所有图片消息 ID 关联同一会话；底部沿用宿主用量统计。浏览器缺失/渲染失败则退回文字。
 
 渲染是宿主排版功能，不向 AI 开放浏览器工具。禁止 HTML、脚本与远程图片，CSP 禁止网络并阻止全部浏览器请求。所有 discuss 模型回答、摘要及工具循环仅使用群 DeepSeek Key，Search/Fetch 同 Key；不调用全局 AI provider，不引入额外图像生成请求。
+
+
+## beta.1.4 启动与链接交付
+
+启动后后台实际探测 Chromium headless；缺失时用 sys.executable -m playwright install chromium 固定参数安装，不执行 shell、不安装系统依赖、不提权，不注册 AI 工具。检测 25 秒、下载最多 300 秒，每次运行仅一次，路由重载不重试；关闭时取消任务并清理安装进程。失败通过现有 Super 诊断机制通知，卡片仍可退回文字。
+
+图片输出后，解析 Markdown、引用链接、自动链接及裸 HTTP(S) URL，按 URL 去重且保留标题，每 50 条构成一组合并聊天记录；图片及链接记录的消息 ID 都映射回同会话。链接不访问网络，秘密检查及 OneBot 全局出站保护仍生效。文字输出不另发记录，转发失败则退回链接文字。

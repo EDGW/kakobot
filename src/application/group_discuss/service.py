@@ -25,6 +25,7 @@ from ...infrastructure.messaging.help_images import HelpImageStore
 from ...infrastructure.messaging.onebot import ReadonlyViolation
 from ...infrastructure.storage.json_store import atomic_json, read_json
 from ...presentation.group_discuss.configuration import render_configuration
+from ...presentation.group_discuss.links import answer_links
 from ...presentation.group_discuss.output import output_mode, usage_footer
 from .harness import Turn, run_turn
 
@@ -429,6 +430,32 @@ class DiscussService:
                 )
                 if isinstance(result, dict) and result.get("message_id") is not None:
                     self.store.map_message(scope, result["message_id"], session)
+            links = answer_links(text)
+            for start in range(0, len(links), 50):
+                batch = links[start : start + 50]
+                self.guard.secrets.check(batch)
+                try:
+                    result = await gateway.send_link_forward(
+                        batch, group=ctx.group, user="" if ctx.group else ctx.actor
+                    )
+                    if (
+                        isinstance(result, dict)
+                        and result.get("message_id") is not None
+                    ):
+                        self.store.map_message(scope, result["message_id"], session)
+                except (SecretViolation, ReadonlyViolation):
+                    raise
+                except Exception as exc:
+                    await self.guard.report_error(
+                        gateway.bot, ctx.bot, "group-discuss-links", exc
+                    )
+                    await self.send(
+                        ctx,
+                        gateway,
+                        "回答链接：\n"
+                        + "\n\n".join(label + "\n" + url for label, url in batch),
+                        session,
+                    )
             return
         await self.send(ctx, gateway, text + "\n\n" + footer, session)
 

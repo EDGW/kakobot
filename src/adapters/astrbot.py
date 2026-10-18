@@ -271,6 +271,7 @@ class AstrBotAdapter:
                     await self.runtime.guard.report_error(
                         platform.get_client(), "", "启动账号路由查询", exc
                     )
+        self.runtime.browser_setup.start()
         self.runtime.scheduler.start()
         self.runtime.upgrade_announcements.start()
 
