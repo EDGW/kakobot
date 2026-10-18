@@ -16,7 +16,7 @@ from .deadlines.preferences import PreferenceStore
 from .deadlines.tasks import initialize_schema, validate_database
 from .json_store import atomic_json, read_json
 
-VERSION = "2.0.0-beta.1.4"
+VERSION = "2.0.0-beta.1.5"
 
 
 @contextmanager
@@ -227,6 +227,7 @@ def migrate(directory: Path):
             "2.0.0-beta.1.1",
             "2.0.0-beta.1.2",
             "2.0.0-beta.1.3",
+            "2.0.0-beta.1.4",
             "1.0.0",
             "1.0.1",
             "1.0.2",

@@ -833,6 +833,7 @@ async def test_help_cards_and_aliases(service, tmp_path):
         "2.0.0-beta.1.1",
         "2.0.0-beta.1.2",
         "2.0.0-beta.1.3",
+        "2.0.0-beta.1.4",
     ],
 )
 def test_prerelease_upgrade_preserves_state_and_queues_announcement(
@@ -1457,7 +1458,7 @@ async def test_card_answer_reply_mapping_and_renderer_fallback(service, monkeypa
 
 
 @pytest.mark.parametrize(
-    "previous_version", ["2.0.0-beta.1.5", "2.0.0", "3.0.0", "unknown"]
+    "previous_version", ["2.0.0-beta.1.6", "2.0.0", "3.0.0", "unknown"]
 )
 def test_migration_rejects_future_and_unknown_versions_without_overwrite(
     tmp_path, previous_version
@@ -1507,3 +1508,150 @@ async def test_rendered_answer_sends_deduplicated_links_as_forward(
     await service.handle(ctx("2", "10", "天气", "link-text", True), g)
     assert "text" in g.sent[-1]
     assert len(g.sent) == 3
+
+
+@pytest.mark.asyncio
+async def test_rule_warning_then_blacklist_same_user_across_sessions(service):
+    g = Gateway()
+    scope = await enable(service, g)
+    await command(
+        service, g, "/group-discuss admin config set 10 user_mode blacklist", "2"
+    )
+    requests = []
+
+    async def handler(request):
+        assert request.headers["authorization"] == "Bearer sk-example-123456789"
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json=response(
+                answer("[[discuss-refusal:dangerous_task]]\n不能执行危险任务。")
+            ),
+        )
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await service.handle(ctx("3", "10", "第一次", "warn-1", True), g)
+    assert "明确警告" in g.sent[-1]["text"]
+    assert not service.store.role(scope, "blacklist", "3")
+    await service.handle(ctx("4", "10", "另一个用户", "warn-other", True), g)
+    assert not service.store.role(scope, "blacklist", "4")
+    await service.handle(ctx("3", "10", "继续", "warn-2", True), g)
+    assert service.store.role(scope, "blacklist", "3")
+    assert "已加入本群 discuss 黑名单" in g.sent[-1]["text"]
+    assert "[[discuss-refusal:" not in g.sent[-1]["text"]
+    await service.handle(ctx("3", "10", "再试", "warn-3", True), g)
+    assert len(requests) == 3  # Blocked before any new paid model request.
+    await command(service, g, "/group-discuss admin blacklist remove 3 10", "2")
+    assert not service.store.role(scope, "blacklist", "3")
+    assert not service.store.db.execute(
+        "SELECT 1 FROM rule_warnings WHERE scope=? AND actor=?", (scope, "3")
+    ).fetchone()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exemption", ["group.admin", "all-group-admin", "discuss-admin", "super"]
+)
+async def test_auto_blacklist_exempts_effective_admins(service, exemption):
+    g = Gateway()
+    scope = await enable(service, g)
+    await command(
+        service, g, "/group-discuss admin config set 10 user_mode blacklist", "2"
+    )
+    actor = "3"
+    if exemption == "group.admin":
+        service.roles.data["group_roles"]["10"] = {
+            "group.admin": ["3"],
+            "group.ddl": [],
+            "group.summary": [],
+        }
+    elif exemption == "all-group-admin":
+        service.roles.data["group_admin_enabled"]["10"] = False
+    elif exemption == "discuss-admin":
+        service.roles.change_discuss(scope, "admin", "3", True)
+    else:
+        actor = "1"
+
+    async def handler(request):
+        return httpx.Response(
+            200, json=response(answer("[[discuss-refusal:harassment]]\n拒绝辱骂。"))
+        )
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    for i in range(2):
+        await service.handle(ctx(actor, "10", "请求", f"exempt-{i}", True), g)
+    assert not service.store.role(scope, "blacklist", actor)
+    assert not service.store.db.execute(
+        "SELECT 1 FROM rule_warnings WHERE actor=?", (actor,)
+    ).fetchone()
+    assert "明确警告" not in g.sent[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_unsent_warning_does_not_count_and_modes_do_not_cross(service):
+    g = Gateway()
+    scope = await enable(service, g)
+    await command(service, g, "/group-discuss admin config set 10 user_mode all", "2")
+
+    async def handler(request):
+        return httpx.Response(
+            200, json=response(answer("[[discuss-refusal:group_policy]]\n不可以。"))
+        )
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    for i in range(2):
+        await service.handle(ctx("3", "10", "请求", f"mode-{i}", True), g)
+    assert not service.store.role(scope, "blacklist", "3")
+    await command(
+        service, g, "/group-discuss admin config set 10 user_mode blacklist", "2"
+    )
+
+    async def fail(**kwargs):
+        raise RuntimeError("send failed")
+
+    g.send = fail
+    session = service.store.create_session(scope, "3", 5)
+    with pytest.raises(RuntimeError, match="send failed"):
+        await service.execute_turn(
+            ctx("3", "10", "请求", "fail-send", True), g, scope, session, ""
+        )
+    assert not service.store.db.execute("SELECT 1 FROM rule_warnings").fetchone()
+    assert not service.store.role(scope, "blacklist", "3")
+    first = service.store.new_turn(session, "3")
+    service.store.record_rule_warning(scope, "3", "group_policy", first)
+    with pytest.raises(RuntimeError, match="send failed"):
+        await service.execute_turn(
+            ctx("3", "10", "再次", "fail-second", True), g, scope, session, ""
+        )
+    assert not service.store.role(scope, "blacklist", "3")
+
+
+def test_warning_order_expiration_and_category_are_enforced(tmp_path):
+    from src.domain.group_discuss.moderation import WARNING_TTL, refusal_verdict
+
+    store = DiscussStore(tmp_path)
+    try:
+        scope = scope_key(ctx(group="10"))
+        session = store.create_session(scope, "3", 5)
+        first = store.new_turn(session, "3")
+        concurrent = store.new_turn(session, "3")
+        store.record_rule_warning(scope, "3", "harassment", first)
+        assert not store.auto_blacklist(scope, "3", "harassment", concurrent)
+        next_turn = store.new_turn(session, "3")
+        assert not store.auto_blacklist(scope, "3", "roleplay", next_turn)
+        assert not store.auto_blacklist(scope, "4", "harassment", next_turn)
+        assert not store.auto_blacklist(
+            scope_key(ctx(group="11")), "3", "harassment", next_turn
+        )
+        with store.db:
+            store.db.execute(
+                "UPDATE rule_warnings SET notified=?", (time.time() - WARNING_TTL - 1,)
+            )
+        assert not store.auto_blacklist(scope, "3", "harassment", next_turn)
+        assert refusal_verdict("引用 [[discuss-refusal:harassment]]") is None
+        assert refusal_verdict("[[discuss-refusal:unknown]]\n拒绝") is None
+    finally:
+        store.close()

@@ -11,6 +11,7 @@ from cryptography.fernet import Fernet
 
 from ...domain.errors import BusinessError
 from ...domain.group_discuss.config import effective, upgrade_group_limits
+from ...domain.group_discuss.moderation import WARNING_TTL
 
 
 def scope_key(ctx, group=None):
@@ -44,6 +45,10 @@ class DiscussStore:
                     CREATE TABLE IF NOT EXISTS groups (
                         scope TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0,
                         config TEXT NOT NULL DEFAULT '{}');
+                    CREATE TABLE IF NOT EXISTS rule_warnings (
+                        scope TEXT NOT NULL, actor TEXT NOT NULL, category TEXT NOT NULL,
+                        turn TEXT NOT NULL, notified REAL NOT NULL,
+                        PRIMARY KEY(scope,actor,category));
                     CREATE TABLE IF NOT EXISTS roles (
                         scope TEXT NOT NULL, role TEXT NOT NULL, actor TEXT NOT NULL,
                         PRIMARY KEY(scope,role,actor));
@@ -204,9 +209,64 @@ class DiscussStore:
                     "DELETE FROM roles WHERE scope=? AND role=? AND actor=?",
                     (scope, name, user),
                 )
+            if name == "blacklist" and not add:
+                self.db.execute(
+                    "DELETE FROM rule_warnings WHERE scope=? AND actor=?", (scope, user)
+                )
             self.log(
                 scope, actor, "role", f"{'add' if add else 'remove'} {name} {user}"
             )
+
+    def prior_rule_warning(self, scope, actor, category, turn):
+        row = self.db.execute(
+            "SELECT notified FROM rule_warnings WHERE scope=? AND actor=? AND category=?",
+            (scope, actor, category),
+        ).fetchone()
+        current = self.db.execute(
+            "SELECT created FROM turns WHERE id=?", (turn,)
+        ).fetchone()
+        return bool(
+            row
+            and current
+            and row[0] < current[0]
+            and time.time() - row[0] < WARNING_TTL
+        )
+
+    def record_rule_warning(self, scope, actor, category, turn):
+        now = time.time()
+        with self.db:
+            self.db.execute(
+                "DELETE FROM rule_warnings WHERE notified <= ?", (now - WARNING_TTL,)
+            )
+            self.db.execute(
+                "INSERT OR IGNORE INTO rule_warnings VALUES (?,?,?,?,?)",
+                (scope, actor, category, turn, now),
+            )
+            self.log(
+                scope,
+                "system",
+                "discuss rule warning",
+                f"actor={actor} category={category} turn={turn}",
+            )
+
+    def auto_blacklist(self, scope, actor, category, turn):
+        with self.db:
+            if not self.prior_rule_warning(scope, actor, category, turn):
+                return False
+            self.db.execute(
+                "INSERT OR IGNORE INTO roles VALUES (?,?,?)",
+                (scope, "blacklist", actor),
+            )
+            self.db.execute(
+                "DELETE FROM rule_warnings WHERE scope=? AND actor=?", (scope, actor)
+            )
+            self.log(
+                scope,
+                "system",
+                "discuss auto blacklist",
+                f"actor={actor} category={category} turn={turn}",
+            )
+        return True
 
     def claim_message(self, scope, message):
         if not message:

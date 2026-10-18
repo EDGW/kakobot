@@ -18,6 +18,7 @@ from ...domain.group_discuss.config import (
     validate_group,
     validate_system,
 )
+from ...domain.group_discuss.moderation import CATEGORIES, refusal_verdict
 from ...domain.security import SecretViolation
 from ...infrastructure.group_discuss.rendering import render_markdown_cards
 from ...infrastructure.group_discuss.store import DiscussStore, scope_key
@@ -159,6 +160,19 @@ class DiscussService:
 
     def config(self, scope):
         return effective(self.store.group(scope)["config"], self.policy)
+
+    def auto_moderation_allowed(self, ctx, scope):
+        if (
+            not self.store.group(scope)["enabled"]
+            or self.config(scope)["user_mode"] != "blacklist"
+        ):
+            return False
+        if self.rank(scope, ctx.actor):
+            return False
+        roles = self.roles.effective(
+            ctx.actor, ctx.group, member=True, platform=ctx.platform, bot=ctx.bot
+        )
+        return "group.admin" not in roles
 
     async def require_user(self, ctx, gateway, scope):
         if self.global_super(ctx.actor) or self.rank(scope, ctx.actor):
@@ -412,6 +426,30 @@ class DiscussService:
         ):
             self.store.end(scope, session, "会话预算耗尽")
             text += "\n会话预算已耗尽，本会话结束。"
+        category = refusal_verdict(text) if state == "completed" else None
+        warning = False
+        ban = False
+        if category:
+            text = f"该请求违反本群规则（{CATEGORIES[category]}），无法继续。"
+            if self.auto_moderation_allowed(ctx, scope):
+                if self.store.prior_rule_warning(
+                    scope, ctx.actor, category, identifier
+                ):
+                    ban = True
+                    text += f"\n用户 {ctx.actor} 在明确警告后继续提出同类违规要求，已加入本群 discuss 黑名单。"
+                else:
+                    warning = True
+                    text += "\n这是一次明确警告：请勿继续提出同类违规要求；24 小时内再次违规将加入本群 discuss 黑名单。"
+        await self.deliver_answer(ctx, gateway, scope, session, identifier, text, state)
+        if self.auto_moderation_allowed(ctx, scope):
+            if ban:
+                self.store.auto_blacklist(scope, ctx.actor, category, identifier)
+            elif warning:
+                self.store.record_rule_warning(scope, ctx.actor, category, identifier)
+
+    async def deliver_answer(
+        self, ctx, gateway, scope, session, identifier, text, state
+    ):
         text, use_card = output_mode(text)
         footer = usage_footer(self.store.turn_usage(identifier))
         if use_card and state == "completed":
