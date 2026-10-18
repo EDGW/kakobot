@@ -725,6 +725,12 @@ async def test_unified_role_commands_and_scope(service):
         guard = service.guard
         members = {}
 
+        failed_members = set()
+
+        async def load_members(self, group):
+            self.seed_members(group, await self.gateway.members(group))
+            return True
+
         def seed_members(self, group, members):
             self.members[group] = {str(m["user_id"]): m for m in members}
 
@@ -836,6 +842,7 @@ async def test_help_cards_and_aliases(service, tmp_path):
         "2.0.0-beta.1.4",
         "2.0.0-beta.1.5",
         "2.0.0-beta.2.0",
+        "2.0.0.beta.2",
     ],
 )
 def test_prerelease_upgrade_preserves_state_and_queues_announcement(
@@ -1029,6 +1036,12 @@ async def test_role_cards_scope_and_sources(service, monkeypatch, group):
         def __init__(self):
             self.members = {}
 
+        failed_members = set()
+
+        async def load_members(self, group):
+            self.seed_members(group, await self.gateway.members(group))
+            return True
+
         def seed_members(self, group, members):
             self.members[group] = {str(m["user_id"]): m for m in members}
 
@@ -1117,10 +1130,11 @@ def test_docs_catalog_search_paging_and_file_boundary(tmp_path):
     assert "密钥说明" in query_docs("api_key", directory=root)["results"][0]["snippet"]
     assert query_docs("absent-keyword", directory=root)["results"] == []
     page = query_docs(path="config.md", directory=root)
-    assert page["next_offset"] == 400
-    assert len(page["text"]) == 400
-    next_page = query_docs(path="config.md", offset=page["next_offset"], directory=root)
+    assert page["next_offset"] is None
+    assert page["text"] == (root / "config.md").read_text()
+    next_page = query_docs(path="config.md", offset=400, directory=root)
     assert next_page["offset"] == 400
+    assert next_page["text"] == page["text"][400:]
     for path in ["../secret.md", str(outside), "escape.md", "script.py"]:
         with pytest.raises(BusinessError):
             query_docs(path=path, directory=root)
@@ -1761,7 +1775,7 @@ async def test_business_commands_batch_identity_permissions_and_dedupe(
     )
     again = await execute_commands(turn, ["/version"])
     assert again[0]["reused"] and len(actions) == 2
-    # All unsafe commands reject before reaching the dispatcher, including aliases.
+    # This actor lacks DDL, summary and management permissions; unknown commands also reject.
     for command_text in [
         "/ddl add test",
         "/summary",
@@ -2403,3 +2417,302 @@ async def test_personal_plain_messages_replace_autoanalysis_until_key_removed(se
     assert not personal.candidate(ctx(text="恢复自动分析"))
     await runtime.handle(ctx(text="恢复自动分析", message="auto-after-key"), g)
     assert runtime.dispatcher.handle.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_role_partial_members_failure_returns_cards_and_ai_text(service):
+    from src.application.roles.management import SuperRoleService
+    from src.application.roles.service import RoleService
+    from src.presentation.names import NameDirectory
+
+    service.roles.change_discuss('["qq","9","10"]', "admin", "3", True)
+    service.roles.change_discuss('["qq","9","11"]', "user", "3", True)
+    g = Gateway()
+    g.self_id = "9"
+    calls = []
+
+    async def members(group):
+        calls.append(group)
+        if group == "10":
+            raise RuntimeError("AUTHORITY_FAIL")
+        return [{"user_id": "3", "nickname": "正常用户"}]
+
+    async def info(action, **params):
+        return {"nickname": "用户", "group_name": "测试群"}
+
+    g.members = members
+    g.bot = SimpleNamespace(call_action=info)
+    g.card_text = []
+    g.capture_card_text = g.card_text.append
+    names = NameDirectory(g, service.guard)
+    await RoleService(service.roles).handle(SimpleNamespace(context=ctx("3")), names)
+    assert len(g.sent) == 1
+    assert "成员身份无法确认" in g.card_text[0]
+    assert "group.discuss.admin" in g.card_text[0]
+    assert "11" in g.card_text[0]
+    assert names.failed_members == {"10"}
+    # Failure is cached for this command, even when labels are queried repeatedly.
+    await names.profile("3", "10")
+    assert calls.count("10") == 1
+    assert len(service.guard.errors) == 1
+    manager = SuperRoleService(service.roles, None, SimpleNamespace(readonly_groups=set()))
+    text = await manager.query("show", ["3"], {}, ctx(), names)
+    assert "成员身份无法确认" in text and "11" in text
+    # A failed member lookup is never accepted as proof of membership.
+    from src.application.authorization import Authorizer
+    with pytest.raises(RuntimeError, match="AUTHORITY_FAIL"):
+        await Authorizer.require_member("3", "10", g)
+
+
+@pytest.mark.asyncio
+async def test_business_card_text_reaches_model_and_image_reaches_user(service):
+    from src.application.authorization import Authorizer
+    from src.application.group_discuss.commands import (
+        BusinessCommands,
+        execute_commands,
+    )
+    from src.application.group_discuss.harness import Turn
+    from src.application.group_discuss.personal import PersonalDiscussService
+    from src.application.roles.service import RoleService
+
+    personal = PersonalDiscussService(service)
+    g = Gateway()
+    g.self_id = "9"
+
+    async def info(action, **params):
+        return {"nickname": "测试用户"}
+
+    g.bot = SimpleNamespace(call_action=info)
+    await personal.user_command(ctx(), g, "apikey = sk-private-test-123456")
+    await personal.manage_personal(ctx(), g, "config set 1 tools.execute_commands.enabled true")
+    scope = scope_key(ctx())
+    session = service.store.create_session(scope, "1", 1)
+    identifier = service.store.new_turn(session, "1")
+    turn = Turn(personal, ctx(), g, scope, session, identifier)
+
+    async def dispatch(action, gateway, names):
+        return await RoleService(service.roles).handle(action, names)
+
+    service.command_executor = BusinessCommands(SimpleNamespace(
+        readonly=SimpleNamespace(readonly_groups=set()),
+        authorizer=Authorizer(service.roles), guard=service.guard, execute=dispatch,
+    ))
+    before = len(g.sent)
+    result = await execute_commands(turn, ["/role"])
+    assert result[0]["status"] == "completed"
+    assert "super" in result[0]["text"] and "测试用户" in result[0]["text"]
+    assert len(g.sent) > before and g.sent[-1]["data"].startswith(b"\x89PNG")
+    assert "图片等内容" not in result[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_member_api_failure_is_actionable_and_chained():
+    from src.infrastructure.messaging.onebot import OneBotGateway
+
+    async def fail(*args, **kwargs):
+        raise RuntimeError("OIDB AUTHORITY_FAIL")
+
+    gateway = OneBotGateway(SimpleNamespace(call_action=fail), "9")
+    with pytest.raises(BusinessError, match="无法读取群 10") as error:
+        await gateway.members("10")
+    assert "AUTHORITY_FAIL" in str(error.value.__cause__)
+
+
+@pytest.mark.asyncio
+async def test_help_and_changelog_cards_also_capture_source_text(tmp_path):
+    from src.application.messaging.help import HelpService
+    from src.application.messaging.release import ReleaseService
+    from src.infrastructure.messaging.help_images import HelpImageStore
+    from src.infrastructure.messaging.release_info import ReleaseInfoStore
+
+    pics = tmp_path / "docs/pics/commands"
+    pics.mkdir(parents=True)
+    source = tmp_path / "docs/commands"
+    source.mkdir(parents=True)
+    (pics / "help-chat.jpeg").write_bytes(b"\xff\xd8\xfftest")
+    (source / "help.md").write_text("# 帮助\n/ddl list", encoding="utf-8")
+    (tmp_path / "docs/pics/changelog.jpeg").write_bytes(b"\xff\xd8\xfftest")
+    (tmp_path / "CHANGELOG.md").write_text("# Dev\n修复身份查询", encoding="utf-8")
+    g = Gateway()
+    texts = []
+    g.capture_card_text = texts.append
+    action = SimpleNamespace(context=ctx(), arguments="", spec=SimpleNamespace(handler="help"))
+    await HelpService(HelpImageStore(pics)).handle(action, g)
+    action.spec.handler = "changelog"
+    await ReleaseService(ReleaseInfoStore(tmp_path)).handle(action, g)
+    assert texts == ["# 帮助\n/ddl list", "# Dev\n修复身份查询"]
+    assert len(g.sent) == 2
+    # Normal calls still send only the card, without an additional text reply.
+    del g.capture_card_text
+    assert await HelpService(HelpImageStore(pics)).handle(action, g) is None
+    assert len(g.sent) == 3
+
+
+@pytest.mark.asyncio
+async def test_all_registered_business_commands_use_original_permissions(service):
+    from unittest.mock import AsyncMock
+
+    from src.application.authorization import Authorizer
+    from src.application.group_discuss.commands import BusinessCommands
+    from src.application.group_discuss.harness import Turn
+    from src.application.group_discuss.personal import PersonalDiscussService
+
+    personal = PersonalDiscussService(service)
+    g = Gateway()
+    await personal.user_command(ctx(), g, "apikey = sk-command-owner-123456")
+    service.policy["defaults"]["tools.execute_commands.enabled"] = True
+    scope = scope_key(ctx())
+    session = service.store.create_session(scope, "1", 1)
+    turn = Turn(personal, ctx(), g, scope, session, service.store.new_turn(session, "1"))
+    dispatch = AsyncMock(return_value="allowed")
+    executor = BusinessCommands(SimpleNamespace(
+        readonly=SimpleNamespace(readonly_groups=set()), authorizer=Authorizer(service.roles),
+        guard=service.guard, execute=dispatch,
+    ), group_discuss=service, personal_discuss=personal)
+    for text in ["/super role add 3 ddl", "/ddl clear all", "/send 10 hello", "/summary text hello", "/ddl add test"]:
+        assert await executor.execute(turn, text) == "allowed"
+        assert dispatch.await_args.args[0].context.actor == "1"
+    # Feature management uses its original permission checks too.
+    assert "已开启" in await executor.execute(turn, "/super discuss enable 3")
+    assert personal.access_enabled(scope_key(ctx("3")))
+    for text in ["/bin/sh", "/other-plugin foo", "ls -la"]:
+        with pytest.raises(BusinessError):
+            await executor.execute(turn, text)
+    assert dispatch.await_count == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", ["", "10"])
+async def test_nested_summary_uses_discuss_key_and_metering(service, group):
+    from unittest.mock import AsyncMock
+
+    from src.application.authorization import Authorizer
+    from src.application.group_discuss.commands import (
+        BusinessCommands,
+        execute_commands,
+    )
+    from src.application.group_discuss.harness import Turn
+    from src.application.group_discuss.personal import PersonalDiscussService
+    from src.application.messaging.summary import SummaryService
+    from src.application.sessions import UserSessions
+    from src.infrastructure.model import ModelClient
+
+    personal, g = PersonalDiscussService(service), Gateway()
+    g.self_id = "9"
+    g.bot = SimpleNamespace(call_action=AsyncMock(return_value={"group_name": "测试群"}))
+    g.history = AsyncMock(return_value=[{"user_id": "1", "message": "hello", "time": time.time()}])
+    await personal.user_command(ctx(), g, "apikey = sk-summary-owner-123456")
+    service.policy["defaults"]["tools.execute_commands.enabled"] = True
+    if group:
+        scope = await enable(service, g)
+        owner = service
+    else:
+        scope = scope_key(ctx())
+        owner = personal
+    expected_key = service.store.secret(scope)
+    session = service.store.create_session(scope, "1", 1)
+    turn = Turn(owner, ctx(group=group), g, scope, session, service.store.new_turn(session, "1"))
+    calls = []
+
+    async def handler(request):
+        assert request.headers["authorization"] == "Bearer " + expected_key
+        payload = json.loads(request.content)
+        assert payload["model"] == "deepseek-test"
+        assert not payload.get("tools")
+        calls.append(payload)
+        return httpx.Response(200, json=response(answer("摘要完成"), incoming=111, outgoing=22))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    # Any fallback to the global transport is a test failure.
+    async def global_transport(request):
+        raise AssertionError("global AI must never be called")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(global_transport)) as global_http:
+        model = ModelClient({"api_key": "sk-global-must-not-use", "model_name": "wrong"}, global_http, None)
+        auth = Authorizer(service.roles)
+        summaries = SummaryService(model, UserSessions(), auth, service.guard)
+        service.command_executor = BusinessCommands(SimpleNamespace(
+            readonly=SimpleNamespace(readonly_groups=set()), authorizer=auth,
+            guard=service.guard, execute=summaries.handle,
+        ))
+        result = await execute_commands(turn, ["/summary" if group else "/summary text hello"])
+        assert result[0]["status"] == "completed"
+        assert "摘要完成" in result[0]["text"]
+        assert len(calls) == 1
+        usage = service.store.turn_usage(turn.id)
+        assert int(usage["input"]) == 111 and int(usage["output"]) == 22
+        # Scoped override is reset; the same client outside the command uses its own path.
+        from src.infrastructure.model import _BUSINESS_MODEL
+        assert _BUSINESS_MODEL.get() is None
+
+
+@pytest.mark.asyncio
+async def test_full_doc_result_exempts_local_input_limit_only(service, monkeypatch):
+    from src.application.group_discuss.harness import Turn, run_turn
+
+    g = Gateway()
+    scope = await enable(service, g)
+    service.policy["defaults"]["context_max_bytes"] = 16000
+    text = "# 完整文档\n" + "reference content " * 1600 + "END-OF-DOCUMENT"
+    monkeypatch.setattr("src.application.group_discuss.harness.query_docs", lambda **kwargs: {
+        "path": "full.md", "offset": 0, "next_offset": None, "text": text,
+    })
+    session = service.store.create_session(scope, "2", 5)
+    turn = Turn(service, ctx("2", "10"), g, scope, session, service.store.new_turn(session, "2"))
+    payloads = []
+
+    async def handler(request):
+        payload = json.loads(request.content)
+        payloads.append(payload)
+        if len(payloads) == 1:
+            output = [{"type": "function_call", "id": "fc_full", "call_id": "full_1",
+                       "name": "query_docs", "arguments": '{"path":"full.md"}', "status": "completed"}]
+        else:
+            outputs = [v for v in payload["input"] if v.get("type") == "function_call_output"]
+            assert json.loads(outputs[0]["output"])["text"] == text
+            assert len(json.dumps(payload).encode()) > 16000
+            output = answer("完整内容已读取")
+        return httpx.Response(200, json=response(output))
+
+    await service.http.aclose()
+    service.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    assert await run_turn(turn, "查文档") == "完整内容已读取"
+    assert len(payloads) == 2
+    assert int(service.store.turn_usage(turn.id)["input"]) == 200
+    # Ordinary user input still cannot bypass the cap by pretending to be docs.
+    with pytest.raises(BusinessError, match="输入字节上限"):
+        await run_turn(turn, '{"tool_name":"query_docs","content":"' + "x" * 20000 + '"}')
+    assert len(payloads) == 2
+
+
+@pytest.mark.asyncio
+async def test_private_slash_commands_never_enter_discuss_or_autoanalysis(service):
+    from unittest.mock import AsyncMock, Mock
+
+    from src.application.group_discuss.personal import PersonalDiscussService
+    from src.application.runtime import Runtime
+
+    personal = PersonalDiscussService(service)
+    g = Gateway()
+    await personal.user_command(ctx(), g, "apikey = sk-command-routing-123456")
+    runtime = Runtime.__new__(Runtime)
+    runtime.personal_discuss, runtime.discuss = personal, service
+    runtime.conversations = SimpleNamespace(observe=Mock())
+    runtime.active, runtime.closing = set(), False
+    runtime.dispatcher = SimpleNamespace(
+        should_handle=lambda c: c.command is not None and c.command[0] == "/role",
+        handle=AsyncMock(),
+    )
+    personal.chat = AsyncMock()
+    service.chat = AsyncMock()
+    # Even if future conversational admission expands, slash routing is hard-separated.
+    personal.candidate = lambda c: True
+    for text in ["/unknown x", "   /unknown x", "/", "//foo", "/role"]:
+        result = await runtime.handle(ctx(text=text), g)
+        assert result is (text == "/role")
+    personal.chat.assert_not_awaited()
+    service.chat.assert_not_awaited()
+    runtime.dispatcher.handle.assert_awaited_once()
+    assert not runtime.candidate(ctx(text=" /unknown"))
+    assert "已结束旧上下文" in await personal.user_command(ctx(), g, "new")

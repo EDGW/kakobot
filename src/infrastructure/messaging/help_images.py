@@ -26,7 +26,7 @@ class HelpImageStore:
     def __init__(self, directory=PICS):
         self.directory = directory
 
-    def read(self, topic, location, *, super_help=False):
+    def paths(self, topic, location, *, super_help=False):
         if not re.fullmatch(r"[a-z][a-z0-9-]*", topic) or location not in {
             "CHAT",
             "GROUP",
@@ -51,10 +51,21 @@ class HelpImageStore:
             directory = self.directory / "group-discuss"
             sources = self.directory.parent.parent / "commands/group-discuss"
         path = directory / f"{topic}-{location.lower()}.jpeg"
+        return path, sources / f"{topic}.md", topic
+
+    def text(self, topic, location, *, super_help=False):
+        _, source, _ = self.paths(topic, location, super_help=super_help)
+        try:
+            return source.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise BusinessError("帮助文字无法读取，请联系 Super 检查安装文件。") from exc
+
+    def read(self, topic, location, *, super_help=False):
+        path, source, topic = self.paths(topic, location, super_help=super_help)
         try:
             data = path.read_bytes()
         except FileNotFoundError as exc:
-            if topic == "help" or (sources / f"{topic}.md").is_file():
+            if topic == "help" or source.is_file():
                 raise BusinessError(
                     "帮助图片缺失，请联系 Super 重新执行 make publish 并安装。"
                 ) from exc

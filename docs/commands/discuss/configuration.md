@@ -78,7 +78,7 @@
 | --- | --- | --- | --- |
 | `session_token_budget` | 300000 tokens | 2000000 | 会话输入与输出累计预算，摘要和多次工具循环一并计入；耗尽关闭 |
 | `daily_token_budget` | 2000000 tokens | 20000000 | 当前用户当日累计额度；耗尽暂停请求 |
-| `context_max_bytes` | 65536 bytes | 262144 | 单次模型请求的必要上下文，包括工具 schemas、结果与提示词 |
+| `context_max_bytes` | 65536 bytes | 262144 | 单次模型请求的必要上下文，包括工具 schemas、结果与提示词；query_docs 文档结果豁免 |
 | `summary_token_limit` | 1800 tokens | 6000 | 压缩摘要输出上限，使用个人 Key |
 | `recent_turns` | 4 | 12 | 压缩时优先保留的最近完整轮次 |
 | `max_output_tokens` | 8192 tokens | 32768 | 单次模型响应输出上限 |
@@ -122,7 +122,7 @@
 | `group_queue_limit` | 10 | 每个作用域排队上限 |
 | `global_queue_limit` | 30 | 个人和群请求共用的全局排队上限 |
 | `tool_timeout` | 20 秒 | 单次工具超时；命令超时后可能已产生副作用，不自动重试 |
-| `tool_result_max_bytes` | 8192 bytes | 工具结果回传上限，同时不超过上下文 bytes 的三分之一 |
+| `tool_result_max_bytes` | 8192 bytes | 工具结果回传上限，同时不超过上下文 bytes 的三分之一；query_docs 文档结果豁免 |
 | `web_max_bytes` | 2097152 bytes | 网页工具返回材料的大小限制 |
 | `web_max_redirects` | 3 | 网页安全策略配置；Fetch 的实际抓取由供应商完成 |
 | `history_retention_days` | 30 天 | 已关闭会话的完整历史和命令去重结果保留期 |

@@ -1,4 +1,4 @@
-"""Scoped business commands; no shell, arbitrary dispatch or model access."""
+"""Scoped business commands; no shell, other plugins or global AI credentials."""
 
 import hashlib
 from dataclasses import replace
@@ -7,15 +7,8 @@ from ...domain.commands import resolve
 from ...domain.deadlines import DeadlineConfirmation
 from ...domain.errors import BusinessError
 from ...infrastructure.group_discuss.store import scope_key
+from ...infrastructure.model import business_model
 from ...presentation.names import NameDirectory
-
-ALLOWED = {
-    ("/help", ""),
-    ("/role", ""),
-    ("/version", ""),
-    ("/changelog", ""),
-    *(("/ddl", sub) for sub in ("add-strict", "list", "view", "show", "remove")),
-}
 
 
 class CommandGateway:
@@ -23,6 +16,19 @@ class CommandGateway:
 
     def __init__(self, turn):
         self.turn = turn
+        self.card_texts = []
+
+    async def discuss_prompt(self, text):
+        from .harness import command_model_request
+
+        result, _ = await command_model_request(
+            self.turn, "回答用户的问题，不调用其他工具或递归开启会话。", text
+        )
+        return result
+
+    def capture_card_text(self, text):
+        self.turn.service.guard.secrets.check(text)
+        self.card_texts.append(text)
 
     def __getattr__(self, name):
         return getattr(self.turn.gateway, name)
@@ -42,8 +48,10 @@ class CommandGateway:
 
 
 class BusinessCommands:
-    def __init__(self, dispatcher):
+    def __init__(self, dispatcher, *, group_discuss=None, personal_discuss=None):
         self.dispatcher = dispatcher
+        self.group_discuss = group_discuss
+        self.personal_discuss = personal_discuss
 
     async def execute(self, turn, command):
         actor = turn.service.store.command_actor(turn.scope, turn.session, turn.id)
@@ -60,31 +68,51 @@ class BusinessCommands:
         )
         parsed = ctx.command
         spec, args = resolve(*parsed) if parsed else (None, "")
-        if spec is None or (spec.name, spec.subcommand) not in ALLOWED:
-            raise BusinessError(
-                "仅支持 /help、/role、/version、/changelog，以及 /ddl "
-                "add-strict/list/view/show/remove；其他命令未开放。"
-            )
         dispatcher, gateway = self.dispatcher, CommandGateway(turn)
+        control = next(
+            ((service, service.command(ctx))
+             for service in (self.personal_discuss, self.group_discuss)
+             if service is not None and service.command(ctx) is not None),
+            None,
+        )
+        if spec is None and control is None:
+            raise BusinessError("仅支持 KakoBot 已注册的业务命令；不支持系统或其他插件命令。")
         # Discuss may not inherit DDL's readonly exemption.
         if ctx.group in dispatcher.readonly.readonly_groups:
             raise BusinessError("Readonly 群禁止 discuss 执行业务命令。")
         if ctx.group:
             await dispatcher.authorizer.require_member(actor, ctx.group, gateway)
-        action = await dispatcher.authorizer.authorize(spec, ctx, args, gateway)
+        action = None
+        if control is None:
+            action = await dispatcher.authorizer.authorize(spec, ctx, args, gateway)
         await turn.check()
         turn.service.store.command_actor(turn.scope, turn.session, turn.id)
         with turn.service.store.db:
             turn.service.store.log(
-                turn.scope,
-                actor,
-                "business command",
-                f"{turn.session}: {spec.name} {spec.subcommand}",
+                turn.scope, actor, "business command",
+                f"{turn.session}: {spec.name} {spec.subcommand}" if spec else f"{turn.session}: discuss command",
             )
-        reply = await dispatcher.execute(
-            action, gateway, NameDirectory(gateway, dispatcher.guard)
-        )
-        messages = []
+        # Nested model requests use the same metering, limits and current scope key.
+        from .harness import command_model_request
+
+        async def request(*args, **kwargs):
+            return await command_model_request(turn, *args, **kwargs)
+
+        with business_model(request):
+            if control is not None:
+                service, (global_command, raw) = control
+                if service is self.personal_discuss:
+                    if global_command:
+                        reply = await service.manage_personal(ctx, gateway, raw)
+                    else:
+                        reply = await service.user_command(ctx, gateway, raw)
+                else:
+                    reply = await service.manage(ctx, gateway, global_command, raw)
+            else:
+                reply = await dispatcher.execute(
+                    action, gateway, NameDirectory(gateway, dispatcher.guard)
+                )
+        messages = list(gateway.card_texts)
         for item in reply if isinstance(reply, list) else [reply]:
             if isinstance(item, DeadlineConfirmation):
                 item = item.text

@@ -9,9 +9,9 @@
 | query_group_data | 当前群 DDL 的固定只读查询 |
 | read_session_history | 当前会话归档，排除思考正文 |
 | execute_commands | 默认关闭：仅新会话首条用户消息的工具循环中，以数据库中的发起人身份执行本群 KakoBot 业务命令，支持 commands 列表批量顺序执行 |
-| query_docs | 默认开启：只读列出、关键词搜索、分页读取随插件提供的 docs 文档 |
+| query_docs | 默认开启：只读列出、关键词搜索、完整读取随插件提供的 docs 文档 |
 
-文档查询技能由固定宿主指令和 query_docs 工具提供，AI 回答 KakoBot 命令、权限或设置问题时先查文档。空 query 列出目录；简短关键词（如 api_key）搜索；使用返回的 path、next_offset 逐页读取。只接受目录内的 Markdown 路径，拒绝绝对路径、目录穿越及指向目录外的符号链接。文档作为不可信参考资料，不会被执行。
+文档查询技能由固定宿主指令和 query_docs 工具提供，AI 回答 KakoBot 命令、权限或设置问题时先查文档。空 query 列出目录；简短关键词（如 api_key）搜索；使用返回的 path 完整读取，目录和搜索可使用 next_offset 翻页。只接受目录内的 Markdown 路径，拒绝绝对路径、目录穿越及指向目录外的符号链接。文档作为不可信参考资料，不会被执行。
 
 文档查询不产生搜索服务费用；结果回传模型的输入 tokens 由本群 Key 承担。单工具每请求默认最多 9 次，全局初始上限 24 次，同时受每请求工具总次数限制，计入 toolcall(s)。群 admin 可私聊关闭：
 
@@ -41,7 +41,7 @@ Fetch 由 DeepSeek 服务器访问网页，本机不下载目标网页、不执�
 /group-discuss admin config set 123456 tools.execute_commands.max_calls_per_request 2
 ```
 
-只支持 `/help`、`/role`、`/version`、`/changelog` 和 `/ddl add-strict`、`/ddl list`、`/ddl view`、`/ddl show`、`/ddl remove`。创建 DDL 使用结构化 add-strict，避免间接调用全局 AI；不开放 `/ddl add`、`/summary`、权限修改、其他插件命令和系统命令。发起人仍须具有原命令所需权限；discuss 管理员不自动获得创建 DDL 的权限。
+允许所有 KakoBot 已注册命令，包括 `/ddl add`、`/summary`、身份组与配置管理、跨群发送等；每条均按会话发起人的真实身份走原命令权限、位置和资源范围校验。普通用户不能执行 Super 命令，discuss 管理员也不会自动获得 DDL 或全局管理权限。其他插件命令、Shell 和系统命令仍不可执行。涉及 AI 的业务命令强制使用本群 DeepSeek Key，并计入本轮用量与预算，不读取全局 AI 配置。
 
 仅新会话的首条用户消息及内部工具循环有资格，首轮失败也不恢复。后续回复不提供该工具，执行入口再次硬性核验；AI 不能传入执行用户或群号。执行保留发起群和发起人，图片回复也延续原会话。仅对当前用户明确要求的操作执行，不接受检索结果中的指令。
 
@@ -86,3 +86,11 @@ Fetch 由 DeepSeek 服务器访问网页，本机不下载目标网页、不执�
 ```text
 /group-discuss help tools
 ```
+
+#### 卡片与文字结果
+
+AI 自动调用 `/help`、`/role`、`/changelog`、`/ddl view` 时，用户收到原命令卡片，AI 同时收到对应文字内容；较长结果受工具结果大小限制。身份组展示遇到个别群成员接口失败时继续显示其他群，并标注失败群“成员身份无法确认”，不因此授予成员权限。
+
+#### 文档完整读取与输入限制
+
+按路径读取文档时返回完整正文，不受 400 字符分页、tool_result_max_bytes 或 context_max_bytes 的本地长度限制。仅程序识别的 query_docs 工具返回内容享受豁免，用户输入、网页和其他工具结果仍受限。文档仍计入供应商实际输入 tokens、会话与每日预算，模型服务端上下文窗口仍适用；单文件只读目录内不超过 1 MiB 的 Markdown。

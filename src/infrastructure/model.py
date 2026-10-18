@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -15,6 +17,19 @@ from ..domain.errors import ModelError
 from ..domain.security import SecretFilter
 
 logger = logging.getLogger("astrbot")
+
+
+_BUSINESS_MODEL = ContextVar("kakobot_business_model", default=None)
+
+
+@contextmanager
+def business_model(request):
+    """Task-local paid-model routing for commands executed inside discuss."""
+    token = _BUSINESS_MODEL.set(request)
+    try:
+        yield
+    finally:
+        _BUSINESS_MODEL.reset(token)
 
 
 class SubmissionStream(httpx.AsyncByteStream):
@@ -76,6 +91,12 @@ class ModelClient:
         *,
         usage_context,
     ) -> tuple[str, int | None]:
+        override = _BUSINESS_MODEL.get()
+        if override is not None:
+            return await override(
+                instructions, content, preflight=preflight,
+                on_submitted=on_submitted, usage_context=usage_context,
+            )
         self.secrets.check(content)
         async with self.slots:
             if preflight:

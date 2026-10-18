@@ -104,8 +104,11 @@ class Runtime:
             HelpService(HelpImageStore()),
             ReleaseService(ReleaseInfoStore()),
         )
-        self.discuss.command_executor = BusinessCommands(self.dispatcher)
         self.personal_discuss = PersonalDiscussService(self.discuss)
+        self.discuss.command_executor = BusinessCommands(
+            self.dispatcher, group_discuss=self.discuss,
+            personal_discuss=self.personal_discuss,
+        )
         self.scheduler = DeadlineScheduler(
             deadlines, resolve_gateway, diagnostic_gateway
         )
@@ -114,6 +117,12 @@ class Runtime:
 
     def candidate(self, ctx):
         """Single admission gate shared with transport adapters."""
+        if not ctx.group and ctx.command is not None:
+            return (
+                self.personal_discuss.command(ctx) is not None
+                or self.discuss.command(ctx) is not None
+                or self.dispatcher.should_handle(ctx)
+            )
         return (
             self.personal_discuss.candidate(ctx)
             or self.discuss.candidate(ctx)
@@ -127,9 +136,18 @@ class Runtime:
         task = asyncio.current_task()
         self.active.add(task)
         try:
-            if self.personal_discuss.candidate(ctx):
+            private_command = not ctx.group and ctx.command is not None
+            personal = (
+                self.personal_discuss.command(ctx) is not None
+                if private_command else self.personal_discuss.candidate(ctx)
+            )
+            if personal:
                 return await self.personal_discuss.handle(ctx, gateway)
-            if self.discuss.candidate(ctx) and await self.discuss.handle(ctx, gateway):
+            group = (
+                self.discuss.command(ctx) is not None
+                if private_command else self.discuss.candidate(ctx)
+            )
+            if group and await self.discuss.handle(ctx, gateway):
                 return True
             if not self.dispatcher.should_handle(ctx):
                 return False

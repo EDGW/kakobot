@@ -1,1 +1,1 @@
-KakoBot v2.0.0.beta.2：修复 /discuss 入口。设置个人 Key 后普通私聊自动进入 discuss 并保留上下文，用 /new 换话题；清除 Key 后恢复原 autoanalysis。DDL 操作需开放业务工具及原权限，升级保留数据。
+KakoBot v2.0.0-beta.2.1：身份查询支持单群失败容错，AI 调用卡片同时读取文字。discuss 可按本人权限执行全部 KakoBot 命令，内部 AI 使用当前 discuss Key；文档完整读取并豁免本地输入长度限制，实际用量照常计费。私聊斜杠消息统一走命令分发。

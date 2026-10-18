@@ -19,8 +19,12 @@ class RoleService:
             sources = self.roles.sources(
                 user, group, member=member, platform=ctx.platform, bot=ctx.bot
             )
-            if sources or ctx.group:
-                visible.append((group, await names.group(group), sources))
+            failed = group in getattr(names, "failed_members", set())
+            if sources or ctx.group or failed:
+                label = await names.group(group)
+                if failed:
+                    label += "（成员身份无法确认；仅列已知授权来源）"
+                visible.append((group, label, sources))
         return title, self.roles.sources(user), visible
 
     async def _description(self, user, ctx, names, groups=None):
@@ -57,7 +61,7 @@ class RoleService:
                 self.roles.groups(platform=ctx.platform, bot=ctx.bot), key=int
             )
             for group in groups:
-                names.seed_members(group, await names.gateway.members(group))
+                await names.load_members(group)
         title, global_sources, visible = await self._snapshot(
             ctx.actor, ctx, names, groups
         )
@@ -76,4 +80,7 @@ class RoleService:
             await names.gateway.send_image(
                 image, group=ctx.group, user="" if ctx.group else ctx.actor
             )
-        return None
+        if getattr(names.gateway, "capture_card_text", None):
+            text = [title, "全局：" + self._format(global_sources)]
+            text.extend(f"群 {label}：{self._format(source)}" for _, label, source in visible)
+            names.gateway.capture_card_text("\n".join(text))

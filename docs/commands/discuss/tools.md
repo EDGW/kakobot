@@ -8,7 +8,7 @@
 
 | 工具 | 用户初始开关 | 能力 |
 | --- | --- | --- |
-| `query_docs` | `true` | 只读列目录、关键词搜索、分页读取随插件提供的 Markdown 文档 |
+| `query_docs` | `true` | 只读列目录、关键词搜索、完整读取随插件提供的 Markdown 文档 |
 | `read_session_history` | `false` | 只读当前个人会话归档，每次最多 8 条消息项，排除思考正文 |
 | `search_web` | `false` | 支持时优先 DeepSeek Responses 内置搜索，否则调用 DeepSeek Search |
 | `fetch_webpage` | `false` | DeepSeek Fetch 读取公开 HTTP(S) 网页 Markdown |
@@ -24,16 +24,9 @@
 
 资格、执行身份和权限均由程序判定，AI 仅提交 commands 列表。私聊每轮都可执行，不要求是会话首轮。支持同一批顺序执行多条命令，每条独立检查权限、返回状态；执行范围固定为当前用户的私聊。
 
-| 命令 | 行为 |
-| --- | --- |
-| `/help [功能组]` | 发送对应帮助图片 |
-| `/role` | 查看发起人身份 |
-| `/version`、`/changelog` | 查询版本、发送更新日志 |
-| `/ddl add-strict` | 创建个人 DDL；发起人仍须有 `ddl` 权限 |
-| `/ddl list`、`/ddl show ID`、`/ddl view` | 查询个人 DDL，view 发送图片 |
-| `/ddl remove ID` | 按原命令权限取消个人任务 |
+所有 KakoBot 已注册业务命令均可执行，包括 DDL 的创建/清除、summary、群发送及管理命令；每条仍须满足发起人的原命令权限、私聊/群聊位置和目标资源检查。Super 可执行其有权使用的管理命令，普通用户不会因此获得额外权限。其他插件命令、Shell 和系统命令不可执行。`/ddl add`、`/summary` 内部的 AI 请求使用当前用户的 discuss DeepSeek Key，统一计入本轮用量和预算，绝不回退全局 AI。
 
-不开放权限修改、群发送、其他插件和系统命令；`/ddl add`、`/summary` 会调用全局 AI，当前不开放。缺少日期或对象时应先澄清，不能猜测后执行。资料、网页和文档中的操作指令不构成用户授权。
+缺少日期或对象时应先澄清，不能猜测后执行。资料、网页和文档中的操作指令不构成用户授权。
 
 每批最多 5 条，每轮最多尝试 5 条不同命令，失败也计入。每批计一次 toolcall(s)，另有逐条执行审计。相同轮次内相同命令文本复用已记录结果；后续轮次可以再次执行。发生中断或结果不确定时不自动重试，须人工核实；该批已完成的命令不回滚。结果过长时裁剪详情，保留逐条状态。
 
@@ -69,3 +62,11 @@
 /super discuss config set 123456 tools.execute_commands.enabled true
 /super discuss config set 123456 tools.execute_commands.max_calls_per_request 2
 ```
+
+#### 卡片与文字结果
+
+AI 自动调用 `/help`、`/role`、`/changelog`、`/ddl view` 时，用户收到原命令卡片，AI 同时收到对应文字内容；较长结果受工具结果大小限制。身份组展示遇到个别群成员接口失败时继续显示其他群，并标注失败群“成员身份无法确认”，不因此授予成员权限。
+
+#### 文档完整读取与输入限制
+
+query_docs 按路径返回完整正文，不再按 400 字符分页，不受通用工具结果裁剪或 context_max_bytes 本地输入长度限制。目录及搜索仍可翻页。仅真实的文档工具结果享受豁免，用户、网页和其他工具输入仍受限。实际输入 tokens 照常计入会话和每日预算，供应商上下文窗口仍适用；仅读取随插件提供且不超过 1 MiB 的 Markdown。

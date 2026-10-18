@@ -9,7 +9,7 @@ DOCS = Path(__file__).resolve().parents[3] / "docs"
 
 
 def query_docs(query="", path="", offset=0, *, directory=DOCS, preferred=""):
-    """List/search documents or read a bounded page from an allowlisted file."""
+    """List/search documents or read the complete document from an allowlisted file."""
     if len(query) > 128 or type(offset) is not int or offset < 0:
         raise BusinessError("文档关键词最多 128 字符，分页起点须非负。")
     root = directory.resolve()
@@ -26,7 +26,7 @@ def query_docs(query="", path="", offset=0, *, directory=DOCS, preferred=""):
         if path not in catalog:
             raise BusinessError("只能读取文档目录返回的 Markdown 路径。")
         text = catalog[path].read_text(encoding="utf-8")
-        end = min(len(text), offset + 400)
+        end = len(text)
         return {
             "path": path,
             "offset": offset,

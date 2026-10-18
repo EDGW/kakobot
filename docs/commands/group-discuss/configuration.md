@@ -113,7 +113,7 @@
 | `max_sessions` | 5 | 20 | 群内活跃会话上限；超过时按创建时间结束最早会话，降低配置立即淘汰超额会话 |
 | `session_token_budget` | 300000 | 2000000 | 单会话累计输入加输出预算；不足以预留下一次调用时自动结束会话 |
 | `daily_token_budget` | 2000000 | 20000000 | 本群每日输入加输出预算；耗尽后暂停调用，次日可继续未结束会话 |
-| `context_max_bytes` | 65536 | 262144 | 单次模型请求的 UTF-8 字节上限（含 JSON 序列化及 256 bytes 协议预留），不是 tokens；历史接近上限时尝试摘要，必要输入仍超限时拒绝调用 |
+| `context_max_bytes` | 65536 | 262144 | 单次模型请求的 UTF-8 字节上限（含 JSON 序列化及 256 bytes 协议预留，query_docs 文档结果豁免），不是 tokens；历史接近上限时尝试摘要，必要输入仍超限时拒绝调用 |
 | `summary_token_limit` | 1800 | 6000 | 历史摘要的最大输出 tokens；实际输出同时受 max_output_tokens 限制，摘要消耗也记入预算 |
 | `recent_turns` | 4 | 12 | 压缩时优先保留的最近完整轮次数；少数长轮次占满上下文时可进一步缩减保留范围 |
 | `max_output_tokens` | 8192 | 32768 | 每次正常回答模型请求的输出上限；同时约束摘要请求的输出，不代表整轮工具循环的输出总和 |
@@ -134,7 +134,7 @@
 | 群数据查询 | `tools.query_group_data.enabled` | `tools.query_group_data.max_calls_per_request` | 只读查询当前群 DDL，不修改业务数据 |
 | 会话历史 | `tools.read_session_history.enabled` | `tools.read_session_history.max_calls_per_request` | 读取本会话归档，每次最多 8 条消息项，排除思考正文 |
 | 首轮业务命令 | `tools.execute_commands.enabled` | `tools.execute_commands.max_calls_per_request` | 默认关闭；首条用户消息内以发起人身份顺序执行多条 KakoBot 命令，每批及整个首轮最多 5 条不同命令，失败也计入 |
-| 项目文档查询 | `tools.query_docs.enabled` | `tools.query_docs.max_calls_per_request` | 默认开启，只读搜索、列出和分页读取随插件提供的 docs 文档 |
+| 项目文档查询 | `tools.query_docs.enabled` | `tools.query_docs.max_calls_per_request` | 默认开启，只读搜索、列出和完整读取随插件提供的 docs 文档 |
 
 独立工具执行前检查单工具和总次数，实际执行失败也计次数。内置搜索可包含网页访问，须同时允许搜索和网页读取；DeepSeek 忽略内置搜索的 max_tool_calls，客户端只能记录响应返回的动作并阻止后续超额调用，无法保证单次响应内不超限。
 
@@ -191,7 +191,7 @@
 | `group_queue_limit` | 10 | 单群等待队列容量；排队还需同时满足全局限制 |
 | `global_queue_limit` | 30 | 所有群合计等待队列容量 |
 | `tool_timeout` | 20 秒 | 单次工具执行超时 |
-| `tool_result_max_bytes` | 8192 bytes | 单次工具结果正文上限；按 UTF-8 字节裁剪，并取 context_max_bytes 的三分之一与本值中较小者，不是实际计费 tokens |
+| `tool_result_max_bytes` | 8192 bytes | 单次工具结果正文上限（query_docs 文档结果豁免）；按 UTF-8 字节裁剪，并取 context_max_bytes 的三分之一与本值中较小者，不是实际计费 tokens |
 | `web_max_bytes` | 2097152 字节（2 MiB） | 独立 Search/Fetch 接口响应体大小上限；本机不直接下载目标网页 |
 | `web_max_redirects` | 3 | 旧版网页抓取保留项；当前 DeepSeek Search/Fetch 不使用该值，客户端不跟随工具接口重定向，目标网页跳转由 DeepSeek 服务处理 |
 | `history_retention_days` | 30 天 | 已结束会话正文的保留时间；启动时清理过期正文，用量账本继续保留 |

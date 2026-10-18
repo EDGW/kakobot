@@ -151,6 +151,11 @@ class DeadlineService:
         await gateway.send_image(
             png, group=ctx.group, user="" if ctx.group else ctx.actor
         )
+        if getattr(gateway, "capture_card_text", None):
+            details = [await show_task(task, names, now) for task in tasks[:MAX_CARDS]]
+            gateway.capture_card_text(
+                "DDL 视图：\n" + ("\n\n".join(details) or "当前会话暂无有效 DDL。")
+            )
 
     def defaulttime(self, ctx, value):
         if ctx.group:

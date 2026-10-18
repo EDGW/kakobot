@@ -28,6 +28,12 @@ class ReleaseInfoStore:
             )
         return match[1]
 
+    def changelog_text(self):
+        try:
+            return (self.root / "CHANGELOG.md").read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise BusinessError("更新日志文字无法读取，请检查安装文件。") from exc
+
     def changelog(self):
         try:
             data = (self.root / "docs/pics/changelog.jpeg").read_bytes()

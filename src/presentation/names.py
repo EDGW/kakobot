@@ -17,9 +17,24 @@ class NameDirectory:
         self.groups = {}
         self.members = {}
         self.users = {}
+        self.failed_members = set()
 
     def seed_members(self, group: str, members: list[dict]):
         self.members[group] = {str(member.get("user_id")): member for member in members}
+        self.failed_members.discard(group)
+
+    async def load_members(self, group: str) -> bool:
+        """Best-effort display lookup; never use this to authorize an action."""
+        if group in self.members:
+            return group not in self.failed_members
+        try:
+            self.seed_members(group, await self.gateway.members(group))
+            return True
+        except Exception as exc:
+            self.members[group] = {}
+            self.failed_members.add(group)
+            await self._report("展示查询；群成员列表 " + group, exc)
+            return False
 
     async def _report(self, stage, error):
         await self.guard.report_error(
@@ -59,11 +74,7 @@ class NameDirectory:
         if group:
             group = qq_id(group)
             if group not in self.members:
-                try:
-                    self.seed_members(group, await self.gateway.members(group))
-                except Exception as exc:
-                    self.members[group] = {}
-                    await self._report("名称查询；群成员列表", exc)
+                await self.load_members(group)
             member = self.members[group].get(user, {})
         card = _name(member.get("card"))
         nickname = _name(member.get("nickname"))

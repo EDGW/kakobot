@@ -20,3 +20,5 @@ class ReleaseService:
         await gateway.send_image(
             data, group=ctx.group, user="" if ctx.group else ctx.actor
         )
+        if getattr(gateway, "capture_card_text", None):
+            gateway.capture_card_text(await asyncio.to_thread(self.store.changelog_text))

@@ -24,3 +24,9 @@ class HelpService:
         await gateway.send_image(
             data, group=ctx.group, user="" if ctx.group else ctx.actor
         )
+        if getattr(gateway, "capture_card_text", None):
+            text = await asyncio.to_thread(
+                self.images.text, topic, ctx.location,
+                super_help=action.spec.handler == "super_help",
+            )
+            gateway.capture_card_text(text)

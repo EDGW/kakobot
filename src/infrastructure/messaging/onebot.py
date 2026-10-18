@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...domain.context import qq_id
+from ...domain.errors import BusinessError
 from ...domain.security import SecretFilter, SecretViolation
 from ..storage.access.readonly import ReadonlyPolicy
 from .output import format_text_output, needs_forward
@@ -240,9 +241,15 @@ class OneBotGateway:
         self.platform_id = platform_id
 
     async def members(self, group: str) -> list[dict]:
-        result = await self.bot.call_action(
-            "get_group_member_list", group_id=int(qq_id(group)), self_id=self.self_id
-        )
+        try:
+            result = await self.bot.call_action(
+                "get_group_member_list", group_id=int(qq_id(group)), self_id=self.self_id
+            )
+        except Exception as exc:
+            raise BusinessError(
+                f"无法读取群 {group} 的成员列表，暂不能确认成员身份；"
+                "请检查机器人是否仍在群内及 QQ 接口状态后重试。"
+            ) from exc
         if not isinstance(result, list) or any(
             not isinstance(item, dict) for item in result
         ):

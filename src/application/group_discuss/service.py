@@ -650,6 +650,8 @@ class DiscussService:
                 )
                 self.authorize(scope, ctx.actor, 1)
                 await gateway.send_image(image, group="", user=ctx.actor)
+                if getattr(gateway, "capture_card_text", None):
+                    gateway.capture_card_text(json.dumps(shown, ensure_ascii=False, indent=2))
                 return None
             if parts[1] not in ("set", "reset") or len(parts) < (
                 5 if parts[1] == "set" else 4
@@ -770,4 +772,8 @@ class DiscussService:
         await gateway.send_image(
             data, group=ctx.group, user="" if ctx.group else ctx.actor
         )
+        if getattr(gateway, "capture_card_text", None):
+            gateway.capture_card_text(await asyncio.to_thread(
+                self.images.text, name, ctx.location, super_help=topic == "super"
+            ))
         return None

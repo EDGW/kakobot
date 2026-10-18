@@ -46,7 +46,7 @@ class SuperRoleService:
 
     async def _seed(self, ctx, names, groups):
         for group in groups:
-            names.seed_members(group, await names.gateway.members(group))
+            await names.load_members(group)
 
     async def handle(self, action, names):
         async with self.lock:
@@ -284,8 +284,9 @@ class SuperRoleService:
                 users.update(names.members.get(candidate, {}))
             if group:
                 if group not in names.members:
-                    names.seed_members(group, await names.gateway.members(group))
-                users.intersection_update(names.members[group])
+                    await names.load_members(group)
+                if group not in names.failed_members:
+                    users.intersection_update(names.members[group])
         source_filter = opts.get("source")
         if source_filter not in {None, "direct", "inherited", "everyone"}:
             raise BusinessError("--source 须为 direct、inherited 或 everyone。")
@@ -332,6 +333,9 @@ class SuperRoleService:
             await self.descriptions._description(user, ctx, names, groups)
             for user in matches[(page - 1) * 20 : page * 20]
         ]
-        return f"身份组（{len(matches)}人，第{page}/{pages}页）：\n" + (
+        warning = ""
+        if names.failed_members:
+            warning = "成员身份无法确认的群：" + "、".join(sorted(names.failed_members)) + "；全员模式及成员名单统计可能不完整。\n"
+        return warning + f"身份组（{len(matches)}人，第{page}/{pages}页）：\n" + (
             "\n\n".join(details) or "（空）"
         )

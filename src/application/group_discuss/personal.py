@@ -214,6 +214,9 @@ class PersonalDiscussService(DiscussService):
                 return "已结束旧上下文，下一条私聊将开启新会话；每日已用额度保留。"
             raw = tail.strip()
             ctx = replace(ctx, segments=[])
+        if getattr(gateway, "discuss_prompt", None):
+            self.ready(scope, self.config(scope))
+            return await gateway.discuss_prompt(raw)
         await self.chat(replace(ctx, text=raw), gateway, scope)
         return None
 
@@ -245,6 +248,8 @@ class PersonalDiscussService(DiscussService):
             copy.deepcopy(self.policy),
         )
         await gateway.send_image(image, group="", user=ctx.actor)
+        if getattr(gateway, "capture_card_text", None):
+            gateway.capture_card_text(json.dumps(shown, ensure_ascii=False, indent=2))
 
     async def manage_personal(self, ctx, gateway, raw):
         if ctx.group or not self.global_super(ctx.actor):
@@ -386,3 +391,7 @@ class PersonalDiscussService(DiscussService):
             self.images.read, name, "CHAT", super_help=topic == "super"
         )
         await gateway.send_image(data, group="", user=ctx.actor)
+        if getattr(gateway, "capture_card_text", None):
+            gateway.capture_card_text(await asyncio.to_thread(
+                self.images.text, name, "CHAT", super_help=topic == "super"
+            ))
