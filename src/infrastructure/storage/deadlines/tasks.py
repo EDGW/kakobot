@@ -302,6 +302,20 @@ class DeadlineStore:
             raise BusinessError(
                 f"DDL #{previous['id']} 已变更或失效，请重新提交修改要求。"
             )
+        if change.cancelled:
+            self.db.execute(
+                "UPDATE tasks SET targets='[]',cancelled=1,source=?,signature=NULL WHERE "
+                + WHERE
+                + " AND id=?",
+                (json.dumps(change.source), *scope, current["id"]),
+            )
+            self.db.execute(
+                "UPDATE notifications SET state='cancelled' WHERE "
+                + WHERE
+                + " AND ddl_id=? AND state='pending'",
+                (*scope, current["id"]),
+            )
+            return
         self.db.execute(
             "UPDATE tasks SET title=?,deadline=?,source=?,signature=NULL WHERE "
             + WHERE
