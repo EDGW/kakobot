@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import time
+from dataclasses import dataclass
 from datetime import datetime
 
 from ...domain.analysis import DEFAULT_TIME_PROMPT, MAX_DEFAULT_PROMPT
@@ -12,6 +13,7 @@ from ...domain.costs import UsageContext
 from ...domain.deadlines import (
     BEIJING,
     DeadlineConfirmation,
+    local_time,
     parse_strict,
     split_targets,
 )
@@ -24,6 +26,15 @@ from ...presentation.deadlines.details import participant_labels, show_task
 from ...presentation.deadlines.image import MAX_CARDS, active_tasks, render_deadlines
 
 
+@dataclass(frozen=True)
+class PendingEdit:
+    scope: tuple
+    version: tuple
+    updates: tuple
+    created: float
+
+
+
 class DeadlineService:
     def __init__(
         self, data, roles, readonly, guard, extractor, authorizer, sessions, preferences
@@ -33,6 +44,7 @@ class DeadlineService:
         self.preferences = preferences
         self.image_slots = asyncio.Semaphore(2)
         self.versions = {}
+        self.pending_edits = {}
         self.failed = False
         readonly.listeners.append(self.readonly_changed)
 
@@ -77,8 +89,8 @@ class DeadlineService:
         if self.failed:
             raise RuntimeError("DDL 存储不可用。")
         ctx, sub, value = action.context, action.spec.subcommand, action.arguments
-        if sub == "defaulttime":
-            return self.defaulttime(ctx, value)
+        if sub == "edit":
+            return await self.edit(action, gateway, names, on_submitted)
         if sub in {"add", "add-strict"}:
             return await self.add(action, gateway, names, on_submitted)
         if sub == "clear":
@@ -176,6 +188,160 @@ class DeadlineService:
                 else "已恢复系统默认提醒提示词。"
             )
             + "仅影响之后自动识别的新个人 DDL，明确指定的提醒优先；无效提示词回退系统默认，每项最多20次通知。"
+        )
+    @staticmethod
+    def _pending_key(ctx):
+        return ctx.platform, ctx.bot, ctx.actor
+
+    @staticmethod
+    def _describe_pending_change(change):
+        previous = change.previous
+        if change.cancelled:
+            return f"取消 DDL #{previous['id']}：{previous['title']}"
+        lines = [f"修改 DDL #{previous['id']}：{previous['title']}"]
+        if change.plan.title != previous["title"]:
+            lines.append(f"标题：{previous['title']} → {change.plan.title}")
+        if change.plan.deadline != previous["deadline"]:
+            lines.append(
+                "截止："
+                + local_time(previous["deadline"])
+                + " → "
+                + local_time(change.plan.deadline)
+            )
+        if change.replace_reminders:
+            lines.append(
+                "提醒："
+                + (
+                    "、".join(local_time(at) for at in change.plan.reminders)
+                    or "无待发提醒"
+                )
+            )
+        return "\n".join(lines)
+
+    def _pending_prompt(self, updates):
+        return (
+            "请确认以下 DDL 操作（5分钟内有效）：\n\n"
+            + "\n\n".join(self._describe_pending_change(change) for change in updates)
+            + "\n\n回复“确认”执行，回复“取消”放弃。"
+        )
+
+    async def queue_edit(self, ctx, updates, version):
+        if not updates:
+            return None
+        self.check_writable(ctx)
+        async with self.data.lock:
+            self.check_writable(ctx)
+            if self.version(ctx.scope) != version:
+                raise BusinessError("个人 DDL 已变更，编辑已取消，请重新提交。")
+        prompt = self._pending_prompt(updates)
+        self.guard.secrets.check(prompt)
+        self.pending_edits[self._pending_key(ctx)] = PendingEdit(
+            ctx.scope, version, tuple(updates), time.time()
+        )
+        return prompt
+
+    async def resolve_pending(self, ctx, gateway, names, text):
+        key = self._pending_key(ctx)
+        pending = self.pending_edits.get(key)
+        if pending is None:
+            return None
+        if time.time() - pending.created > 300:
+            self.pending_edits.pop(key, None)
+            return "待确认的 DDL 操作已过期，请重新提交编辑内容。"
+        value = text.strip().casefold()
+        if value in {"取消", "放弃", "不要", "否", "no", "n"}:
+            self.pending_edits.pop(key, None)
+            return "已放弃待确认的 DDL 操作。"
+        if value not in {"确认", "确认修改", "执行", "同意", "是", "yes", "y"}:
+            return "有一项 DDL 操作待确认，请回复“确认”执行或“取消”放弃。"
+        self.pending_edits.pop(key, None)
+        if self.version(ctx.scope) != pending.version:
+            return "待确认的 DDL 已发生变化，未执行，请重新提交编辑内容。"
+        self.check_writable(ctx)
+        return await self.commit(
+            ctx,
+            gateway,
+            names,
+            [],
+            [],
+            pending.version,
+            "manual",
+            updates=list(pending.updates),
+        )
+
+
+    async def edit(self, action, gateway, names, on_submitted=None):
+        ctx = action.context
+        if ctx.group:
+            raise BusinessError("/ddl edit 仅能私聊使用；群内请使用 /super ddl edit。")
+        parts = command_body(ctx, "edit")
+        if any(part.get("type") != "text" for part in parts):
+            raise BusinessError("/ddl edit 只接受文字内容。")
+        raw = visible_text(parts).strip()
+        if not 1 <= len(raw) <= 2000:
+            raise BusinessError("/ddl edit 内容须为1～2000字。")
+        self.guard.secrets.check(raw)
+        pending = await self.resolve_pending(ctx, gateway, names, raw)
+        if pending is not None:
+            return pending
+        version = self.version(ctx.scope)
+        async with self.sessions.enter(ctx):
+            await self.authorizer.authorize(
+                action.spec, ctx, action.arguments, gateway
+            )
+            self.check_writable(ctx)
+            async with self.data.lock:
+                existing = self.data.list(ctx.scope, time.time())
+            if not existing:
+                return "当前没有可修改的有效个人 DDL。"
+            nodes = [
+                {
+                    "node_id": "n1",
+                    "author_id": ctx.actor,
+                    "text": raw,
+                    "sent_at": ctx.received_at,
+                    "local_time": datetime.fromtimestamp(
+                        ctx.received_at, BEIJING
+                    ).isoformat(),
+                    "time_source": "submission",
+                }
+            ]
+
+            async def preflight():
+                await self.authorizer.authorize(
+                    action.spec, ctx, action.arguments, gateway
+                )
+                self.check_writable(ctx)
+                if self.version(ctx.scope) != version:
+                    raise BusinessError("个人 DDL 已变更，编辑已取消，请重新提交。")
+
+            extracted = await self.extractor.extract(
+                nodes,
+                ctx.actor,
+                [ctx.actor],
+                time.time(),
+                "edit",
+                preflight=preflight,
+                on_submitted=on_submitted,
+                location=ctx.location,
+                existing=existing,
+                preference=self.preferences.get(ctx),
+                direct_text=raw,
+                actor_profile=await names.profile(ctx.actor),
+                usage_context=UsageContext.from_command(ctx, "ddl.edit"),
+            )
+        if not extracted.updates:
+            return (
+                ([extracted.reply] if extracted.reply else [])
+                + (
+                    ["\n".join(extracted.rejected)]
+                    if extracted.rejected
+                    else ["未识别到可修改的 DDL。"]
+                )
+            )
+        await self.authorizer.authorize(action.spec, ctx, action.arguments, gateway)
+        return [await self.queue_edit(ctx, extracted.updates, version)] + (
+            [extracted.reply] if extracted.reply else []
         )
 
     async def add(self, action, gateway, names, on_submitted=None):
@@ -417,9 +583,14 @@ class DeadlineService:
                 for identifier, created in identifiers
             ]
         updated_ids = {change.previous["id"] for change in valid_updates}
+        cancelled_ids = {
+            change.previous["id"] for change in valid_updates if change.cancelled
+        }
         lines = [
             (
-                "已修改 "
+                "已取消 "
+                if task["id"] in cancelled_ids
+                else "已修改 "
                 if task["id"] in updated_ids
                 else "已创建 "
                 if created

@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
-from ...domain.analysis import referenced_deadlines
+from ...domain.analysis import looks_like_edit_request, referenced_deadlines
 from ...domain.costs import UsageContext
 from ...domain.deadlines import BEIJING
 from ...domain.errors import BusinessError
@@ -48,6 +48,11 @@ class AutomaticAnalysis:
     async def handle(self, ctx, gateway, names, on_submitted=None):
         if not self.enabled(ctx):
             raise BusinessError("自动分析当前未启用。")
+        pending = await self.deadlines.resolve_pending(
+            ctx, gateway, names, ctx.text
+        )
+        if pending is not None:
+            return [pending]
         results = []
         async with self.sessions.enter(ctx, automatic=True):
             if not self.enabled(ctx):
@@ -118,6 +123,7 @@ class AutomaticAnalysis:
             package = (
                 (ctx.platform, ctx.bot, ctx.actor, task.task_type, digest)
                 if not referenced_deadlines(direct_text)
+                and not looks_like_edit_request(direct_text)
                 else None
             )
             async with data.lock:
@@ -148,12 +154,17 @@ class AutomaticAnalysis:
             async with data.lock:
                 check_current()
                 existing = data.list(ctx.scope, time.time())
+            mode = (
+                "edit"
+                if existing and looks_like_edit_request(direct_text)
+                else "auto"
+            )
             extracted = await task.extractor.extract(
                 nodes,
                 ctx.actor,
                 [ctx.actor],
                 time.time(),
-                "auto",
+                mode,
                 preflight=preflight,
                 on_submitted=on_submitted,
                 location=ctx.location,
@@ -161,10 +172,34 @@ class AutomaticAnalysis:
                 preference=preference,
                 direct_text=direct_text,
                 actor_profile=await names.profile(ctx.actor),
-                usage_context=UsageContext.from_command(ctx, "autoanalysis.ddl"),
+                usage_context=UsageContext.from_command(
+                    ctx, "autoanalysis.ddl.edit" if mode == "edit" else "autoanalysis.ddl"
+                ),
             )
             if not self.enabled(ctx):
                 raise BusinessError("自动分析资格已变更，未注册任务。")
+            if mode == "edit":
+                async with data.lock:
+                    check_current()
+                    data.create_batch(
+                        ctx.scope, ctx.actor, [], "auto", time.time(), key
+                    )
+                if not extracted.updates:
+                    messages = (
+                        ["\n\n".join(extracted.rejected)]
+                        if extracted.rejected
+                        else []
+                    )
+                    if extracted.reply:
+                        messages.append(extracted.reply)
+                    return messages or ["未识别到可修改的 DDL。"]
+                pending = await self.deadlines.queue_edit(
+                    ctx, extracted.updates, version
+                )
+                return [pending] + (
+                    [extracted.reply] if extracted.reply else []
+                )
+
             if not extracted.has_actions:
                 async with data.lock:
                     check_current()

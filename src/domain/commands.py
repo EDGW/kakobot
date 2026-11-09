@@ -109,6 +109,15 @@ CATALOG = (
     ),
     CommandSpec(
         "/ddl",
+        "edit",
+        {"CHAT": AnyOf(("ddl",))},
+        "CURRENT",
+        "deadlines",
+        "/ddl edit 内容",
+        "用自然语言预览并确认修改自己的个人 DDL；支持第N个任务、标题或截止时间定位",
+    ),
+    CommandSpec(
+        "/ddl",
         "defaulttime",
         {"CHAT": AnyOf(("ddl",))},
         "CURRENT",

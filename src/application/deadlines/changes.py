@@ -1,16 +1,21 @@
 """Validate change data and ground AI-selected edits in the owner's text."""
 
 import json
+import re
 
 from ...domain.analysis import TaskChange, referenced_deadlines
 from ...domain.deadlines import DeadlinePlan, _timestamp, make_plan
 from ...domain.errors import BusinessError
 from .reminders import reminder_plan
 
-CHANGE_FIELDS = {"title", "deadline_at", "remind_at", "notify_on_deadline"}
+CHANGE_INTENT = re.compile(
+    r"改|修改|调整|换成|提前|推迟|延后|截止|提醒|取消|关闭|开启|增加|减少|去掉"
+)
+
+CHANGE_FIELDS = {"title", "deadline_at", "remind_at", "notify_on_deadline", "cancel"}
 
 
-def validate_change(item, existing, direct_text):
+def validate_change(item, existing, direct_text, *, allow_cancel=False):
     if (
         not isinstance(item, dict)
         or set(item) != {"id", "changes", "instruction_quote", "reminder_source"}
@@ -26,9 +31,26 @@ def validate_change(item, existing, direct_text):
     ):
         raise ValueError("invalid personal DDL change")
     quote = item["instruction_quote"]
-    if quote not in direct_text or item["id"] not in referenced_deadlines(quote):
+    ordered_ids = tuple(task["id"] for task in existing.values())
+    titled_tasks = tuple(
+        (task["id"], task["title"]) for task in existing.values()
+    )
+    references = referenced_deadlines(quote, ordered_ids, titled_tasks)
+    if (
+        quote not in direct_text
+        or (references and (len(references) != 1 or item["id"] not in references))
+        or (not references and not CHANGE_INTENT.search(quote))
+    ):
         raise ValueError("DDL change is not grounded in a direct owner instruction")
     changes = item["changes"]
+    if "cancel" in changes:
+        if (
+            not allow_cancel
+            or set(changes) != {"cancel"}
+            or changes["cancel"] is not True
+        ):
+            raise ValueError("invalid personal DDL cancellation")
+        return
     if "title" in changes and (
         not isinstance(changes["title"], str)
         or not 1 <= len(changes["title"].strip()) <= 200
@@ -50,6 +72,19 @@ def validate_change(item, existing, direct_text):
 
 def propose_change(item, previous, now, preference, default_valid):
     changes = item["changes"]
+    if changes.get("cancel"):
+        source = json.loads(previous["source"])
+        source["last_change_fields"] = ["cancel"]
+        return (
+            TaskChange(
+                previous,
+                DeadlinePlan(previous["title"], previous["deadline"], ()),
+                False,
+                source,
+                True,
+            ),
+            False,
+        )
     title = changes.get("title", previous["title"]).strip()
     deadline = (
         _timestamp(changes["deadline_at"], aware=True)
